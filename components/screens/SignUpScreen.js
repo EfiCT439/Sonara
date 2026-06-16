@@ -24,7 +24,7 @@ export default function SignUpScreen({ navigation }) {
     }
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      Alert.alert('Success', 'Account created successfully!');
+      navigation.navigate('Onboarding');
     } catch (error) {
       Alert.alert('Error', error.message);
     }
