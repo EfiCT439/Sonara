@@ -1,11 +1,17 @@
- import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <Text style={styles.logo}>Sonara 🎵</Text>
       <Text style={styles.welcome}>Welcome to Sonara!</Text>
       <Text style={styles.subtitle}>Your music is ready 🎶</Text>
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => navigation.navigate('Player')}>
+        <Text style={styles.buttonText}>▶️ Play Sample Song</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -16,6 +22,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 20,
   },
   logo: {
     fontSize: 42,
@@ -32,5 +39,18 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#888',
+    marginBottom: 40,
+  },
+  button: {
+    backgroundColor: '#1DB954',
+    padding: 15,
+    borderRadius: 25,
+    width: '80%',
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
