@@ -12,6 +12,12 @@ export default function HomeScreen({ navigation }) {
         onPress={() => navigation.navigate('Player')}>
         <Text style={styles.buttonText}>▶️ Play Sample Song</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.premiumButton}
+        onPress={() => navigation.navigate('Paywall')}>
+        <Text style={styles.premiumButtonText}>💎 Go Premium - $1/month</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -47,9 +53,22 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     width: '80%',
     alignItems: 'center',
+    marginBottom: 15,
   },
   buttonText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  premiumButton: {
+    backgroundColor: '#FFD700',
+    padding: 15,
+    borderRadius: 25,
+    width: '80%',
+    alignItems: 'center',
+  },
+  premiumButtonText: {
+    color: '#000',
     fontSize: 16,
     fontWeight: 'bold',
   },
