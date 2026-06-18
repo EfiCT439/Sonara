@@ -7,14 +7,14 @@ export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = async () => {
+ const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      Alert.alert('Success', 'Welcome back to Sonara! 🎵');
+      navigation.navigate('Home');
     } catch (error) {
       Alert.alert('Error', 'Invalid email or password');
     }

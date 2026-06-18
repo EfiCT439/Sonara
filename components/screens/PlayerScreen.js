@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image, Alert } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Alert, Modal, ScrollView } from 'react-native';
 import { Audio } from 'expo-av';
 import NetInfo from '@react-native-community/netinfo';
 
@@ -11,19 +11,44 @@ Audio.setAudioModeAsync({
   playThroughEarpieceAndroid: false,
 });
 
+const SAMPLE_SONGS = [
+  {
+    id: '1',
+    title: 'Sample Song 1',
+    artist: 'Sample Artist',
+    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    coverImage: null,
+    lyrics: 'These are the lyrics for Sample Song 1...',
+  },
+  {
+    id: '2',
+    title: 'Sample Song 2',
+    artist: 'Sample Artist 2',
+    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+    coverImage: null,
+    lyrics: 'These are the lyrics for Sample Song 2...',
+  },
+  {
+    id: '3',
+    title: 'Sample Song 3',
+    artist: 'Sample Artist 3',
+    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+    coverImage: null,
+    lyrics: 'These are the lyrics for Sample Song 3...',
+  },
+];
+
 export default function PlayerScreen({ navigation, route }) {
   const [sound, setSound] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [isFavourite, setIsFavourite] = useState(false);
+  const [currentSongIndex, setCurrentSongIndex] = useState(0);
+  const [showSleepTimer, setShowSleepTimer] = useState(false);
+  const [sleepTimerLabel, setSleepTimerLabel] = useState(null);
+  const sleepTimerRef = useRef(null);
 
-  const song = route?.params?.song || {
-    title: 'Sample Song',
-    artist: 'Sample Artist',
-    audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-    coverImage: null,
-    lyrics: 'These are the sample lyrics for this song...',
-  };
+  const currentSong = SAMPLE_SONGS[currentSongIndex];
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
@@ -37,8 +62,36 @@ export default function PlayerScreen({ navigation, route }) {
     return () => {
       unsubscribe();
       if (sound) sound.unloadAsync();
+      if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
     };
   }, [sound]);
+
+  const loadAndPlaySong = async (song) => {
+    try {
+      if (sound) {
+        await sound.unloadAsync();
+        setSound(null);
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri: song.audioUrl },
+        { shouldPlay: true }
+      );
+      newSound.setOnPlaybackStatusUpdate((status) => {
+        setIsPlaying(status.isPlaying);
+      });
+      setSound(newSound);
+      setIsPlaying(true);
+    } catch (error) {
+      Alert.alert('Error', 'Could not play this song: ' + error.message);
+    }
+  };
 
   const playPauseSound = async () => {
     if (!isConnected) {
@@ -47,22 +100,7 @@ export default function PlayerScreen({ navigation, route }) {
     }
     try {
       if (sound === null) {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-        const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri: song.audioUrl },
-          { shouldPlay: true }
-        );
-        newSound.setOnPlaybackStatusUpdate((status) => {
-          setIsPlaying(status.isPlaying);
-        });
-        setSound(newSound);
-        setIsPlaying(true);
+        await loadAndPlaySong(currentSong);
       } else {
         if (isPlaying) {
           await sound.pauseAsync();
@@ -77,33 +115,88 @@ export default function PlayerScreen({ navigation, route }) {
     }
   };
 
+  const playNext = async () => {
+    const nextIndex = (currentSongIndex + 1) % SAMPLE_SONGS.length;
+    setCurrentSongIndex(nextIndex);
+    setIsFavourite(false);
+    await loadAndPlaySong(SAMPLE_SONGS[nextIndex]);
+  };
+
   const toggleFavourite = () => {
     setIsFavourite(!isFavourite);
     Alert.alert(
       isFavourite ? 'Removed from Favourites' : 'Added to Favourites',
-      isFavourite ? `${song.title} removed from your favourites` : `${song.title} added to your favourites`
+      isFavourite ? `${currentSong.title} removed` : `${currentSong.title} added to favourites`
     );
+  };
+
+  const setSleepTimer = (minutes, label) => {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    setSleepTimerLabel(label);
+    setShowSleepTimer(false);
+
+    if (minutes === 'end') {
+      if (sound) {
+        sound.setOnPlaybackStatusUpdate((status) => {
+          setIsPlaying(status.isPlaying);
+          if (status.didJustFinish) {
+            sound.unloadAsync();
+            setSound(null);
+            setIsPlaying(false);
+            setSleepTimerLabel(null);
+            Alert.alert('Sleep Timer', 'Music stopped. Sleep well! 🌙');
+          }
+        });
+      }
+      return;
+    }
+
+    const ms = minutes * 60 * 1000;
+    sleepTimerRef.current = setTimeout(async () => {
+      if (sound) {
+        await sound.pauseAsync();
+        setIsPlaying(false);
+      }
+      setSleepTimerLabel(null);
+      Alert.alert('Sleep Timer', 'Music stopped. Sleep well! 🌙');
+    }, ms);
+  };
+
+  const cancelSleepTimer = () => {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    setSleepTimerLabel(null);
+    setShowSleepTimer(false);
+    Alert.alert('Sleep Timer', 'Sleep timer cancelled!');
   };
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Back</Text>
-      </TouchableOpacity>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowSleepTimer(true)}>
+          <Text style={styles.timerIcon}>🌙 {sleepTimerLabel || 'Timer'}</Text>
+        </TouchableOpacity>
+      </View>
 
+      {/* Album Art */}
       <View style={styles.albumArt}>
-        {song.coverImage ? (
-          <Image source={{ uri: song.coverImage }} style={styles.albumImage} />
+        {currentSong.coverImage ? (
+          <Image source={{ uri: currentSong.coverImage }} style={styles.albumImage} />
         ) : (
           <Text style={styles.albumEmoji}>🎵</Text>
         )}
       </View>
 
+      {/* Song Info */}
       <View style={styles.songInfo}>
-        <Text style={styles.songTitle}>{song.title}</Text>
-        <Text style={styles.songArtist}>{song.artist}</Text>
+        <Text style={styles.songTitle}>{currentSong.title}</Text>
+        <Text style={styles.songArtist}>{currentSong.artist}</Text>
       </View>
 
+      {/* Controls */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={toggleFavourite}>
           <Text style={styles.controlIcon}>{isFavourite ? '❤️' : '🤍'}</Text>
@@ -113,21 +206,60 @@ export default function PlayerScreen({ navigation, route }) {
           <Text style={styles.playIcon}>{isPlaying ? '⏸' : '▶️'}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity>
+        <TouchableOpacity onPress={playNext}>
           <Text style={styles.controlIcon}>⏭</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.lyricsContainer}>
+      {/* Lyrics */}
+      <ScrollView style={styles.lyricsContainer}>
         <Text style={styles.lyricsTitle}>Lyrics</Text>
-        <Text style={styles.lyrics}>{song.lyrics}</Text>
-      </View>
+        <Text style={styles.lyrics}>{currentSong.lyrics}</Text>
+      </ScrollView>
 
+      {/* Offline Banner */}
       {!isConnected && (
         <View style={styles.offlineBanner}>
           <Text style={styles.offlineText}>⚠️ No internet connection</Text>
         </View>
       )}
+
+      {/* Sleep Timer Modal */}
+      <Modal visible={showSleepTimer} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>🌙 Sleep Timer</Text>
+
+            {[
+              { label: '30 minutes', value: 30 },
+              { label: '45 minutes', value: 45 },
+              { label: '1 hour', value: 60 },
+              { label: '2 hours', value: 120 },
+              { label: '3 hours', value: 180 },
+              { label: 'End of song', value: 'end' },
+            ].map(option => (
+              <TouchableOpacity
+                key={option.label}
+                style={styles.timerOption}
+                onPress={() => setSleepTimer(option.value, option.label)}>
+                <Text style={styles.timerOptionText}>{option.label}</Text>
+              </TouchableOpacity>
+            ))}
+
+            {sleepTimerLabel && (
+              <TouchableOpacity style={styles.cancelTimer} onPress={cancelSleepTimer}>
+                <Text style={styles.cancelTimerText}>❌ Cancel Timer</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.closeModal}
+              onPress={() => setShowSleepTimer(false)}>
+              <Text style={styles.closeModalText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -139,12 +271,19 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 60,
   },
-  backButton: {
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 20,
   },
   backText: {
     color: '#1DB954',
     fontSize: 16,
+  },
+  timerIcon: {
+    color: '#1DB954',
+    fontSize: 14,
   },
   albumArt: {
     width: 250,
@@ -225,6 +364,55 @@ const styles = StyleSheet.create({
   },
   offlineText: {
     color: '#fff',
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#282828',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  timerOption: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  timerOptionText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  cancelTimer: {
+    padding: 15,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  cancelTimerText: {
+    color: '#ff4444',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  closeModal: {
+    backgroundColor: '#1DB954',
+    padding: 15,
+    borderRadius: 25,
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  closeModalText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });
