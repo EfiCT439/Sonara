@@ -14,7 +14,7 @@ export default function LoginScreen({ navigation }) {
     }
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigation.navigate('Home');
+      navigation.navigate('Main');
     } catch (error) {
       Alert.alert('Error', 'Invalid email or password');
     }

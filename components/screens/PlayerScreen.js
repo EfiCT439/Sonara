@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Image, Alert, Modal, ScrollView } from 'react-native';
 import { Audio } from 'expo-av';
 import NetInfo from '@react-native-community/netinfo';
+import { useUser } from '../../context/UserContext';
 
 Audio.setAudioModeAsync({
   allowsRecordingIOS: false,
@@ -9,6 +10,8 @@ Audio.setAudioModeAsync({
   playsInSilentModeIOS: true,
   shouldDuckAndroid: true,
   playThroughEarpieceAndroid: false,
+  interruptionModeIOS: 1,
+  interruptionModeAndroid: 1,
 });
 
 const SAMPLE_SONGS = [
@@ -39,6 +42,7 @@ const SAMPLE_SONGS = [
 ];
 
 export default function PlayerScreen({ navigation, route }) {
+  const { isPremium, skipsRemaining, useSkip } = useUser();
   const [sound, setSound] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
@@ -46,46 +50,78 @@ export default function PlayerScreen({ navigation, route }) {
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
   const [showSleepTimer, setShowSleepTimer] = useState(false);
   const [sleepTimerLabel, setSleepTimerLabel] = useState(null);
+  const [songsPlayed, setSongsPlayed] = useState(0);
+  const [showVideo, setShowVideo] = useState(false);
   const sleepTimerRef = useRef(null);
+  const currentSongIndexRef = useRef(0);
+  const soundRef = useRef(null);
 
   const currentSong = SAMPLE_SONGS[currentSongIndex];
 
   useEffect(() => {
+    Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: true,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+      interruptionModeIOS: 1,
+      interruptionModeAndroid: 1,
+    });
+
     const unsubscribe = NetInfo.addEventListener(state => {
       setIsConnected(state.isConnected);
       if (!state.isConnected) {
         Alert.alert('No Internet', 'You need an internet connection to play music!');
-        if (sound) sound.pauseAsync();
+        if (soundRef.current) soundRef.current.pauseAsync();
       }
     });
 
     return () => {
       unsubscribe();
-      if (sound) sound.unloadAsync();
       if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+      if (soundRef.current) soundRef.current.unloadAsync();
     };
-  }, [sound]);
+  }, []);
 
-  const loadAndPlaySong = async (song) => {
+  const loadAndPlaySong = async (song, songIndex) => {
     try {
-      if (sound) {
-        await sound.unloadAsync();
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
         setSound(null);
       }
+
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         staysActiveInBackground: true,
         playsInSilentModeIOS: true,
         shouldDuckAndroid: true,
         playThroughEarpieceAndroid: false,
+        interruptionModeIOS: 1,
+        interruptionModeAndroid: 1,
       });
+
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: song.audioUrl },
-        { shouldPlay: true }
+        { shouldPlay: true, progressUpdateIntervalMillis: 500 }
       );
+
       newSound.setOnPlaybackStatusUpdate((status) => {
-        setIsPlaying(status.isPlaying);
+        if (status.isLoaded) {
+          setIsPlaying(status.isPlaying);
+          // Auto play next song when current song finishes
+          if (status.didJustFinish) {
+            const nextIndex = (currentSongIndexRef.current + 1) % SAMPLE_SONGS.length;
+            currentSongIndexRef.current = nextIndex;
+            setCurrentSongIndex(nextIndex);
+            loadAndPlaySong(SAMPLE_SONGS[nextIndex], nextIndex);
+          }
+        }
       });
+
+      soundRef.current = newSound;
       setSound(newSound);
       setIsPlaying(true);
     } catch (error) {
@@ -99,14 +135,15 @@ export default function PlayerScreen({ navigation, route }) {
       return;
     }
     try {
-      if (sound === null) {
-        await loadAndPlaySong(currentSong);
+      if (soundRef.current === null) {
+        currentSongIndexRef.current = currentSongIndex;
+        await loadAndPlaySong(currentSong, currentSongIndex);
       } else {
         if (isPlaying) {
-          await sound.pauseAsync();
+          await soundRef.current.pauseAsync();
           setIsPlaying(false);
         } else {
-          await sound.playAsync();
+          await soundRef.current.playAsync();
           setIsPlaying(true);
         }
       }
@@ -116,10 +153,59 @@ export default function PlayerScreen({ navigation, route }) {
   };
 
   const playNext = async () => {
+    const canSkip = useSkip();
+    if (!canSkip) {
+      Alert.alert(
+        'Skip Limit Reached',
+        'You have used all 8 skips for this hour! Upgrade to Premium for unlimited skips! 💎',
+        [
+          { text: 'Maybe Later' },
+          { text: 'Go Premium', onPress: () => navigation.navigate('Paywall') }
+        ]
+      );
+      return;
+    }
+
+    if (!isPremium) {
+      const newSongsPlayed = songsPlayed + 1;
+      setSongsPlayed(newSongsPlayed);
+      if (newSongsPlayed % 3 === 0) {
+        Alert.alert(
+          '📢 Advertisement',
+          'Tired of ads? Upgrade to Sonara Premium for just $1/month and enjoy ad-free music! 🎵',
+          [
+            { text: 'Maybe Later' },
+            { text: 'Go Premium 💎', onPress: () => navigation.navigate('Paywall') }
+          ]
+        );
+        return;
+      }
+    }
+
     const nextIndex = (currentSongIndex + 1) % SAMPLE_SONGS.length;
+    currentSongIndexRef.current = nextIndex;
     setCurrentSongIndex(nextIndex);
     setIsFavourite(false);
-    await loadAndPlaySong(SAMPLE_SONGS[nextIndex]);
+    await loadAndPlaySong(SAMPLE_SONGS[nextIndex], nextIndex);
+  };
+
+  const playPrevious = async () => {
+    if (!isPremium) {
+      Alert.alert(
+        'Premium Feature 💎',
+        'The backward button is a Premium feature! Upgrade for just $1/month!',
+        [
+          { text: 'Maybe Later' },
+          { text: 'Go Premium', onPress: () => navigation.navigate('Paywall') }
+        ]
+      );
+      return;
+    }
+    const prevIndex = (currentSongIndex - 1 + SAMPLE_SONGS.length) % SAMPLE_SONGS.length;
+    currentSongIndexRef.current = prevIndex;
+    setCurrentSongIndex(prevIndex);
+    setIsFavourite(false);
+    await loadAndPlaySong(SAMPLE_SONGS[prevIndex], prevIndex);
   };
 
   const toggleFavourite = () => {
@@ -130,17 +216,37 @@ export default function PlayerScreen({ navigation, route }) {
     );
   };
 
+  const toggleVideoAudio = () => {
+    if (!isPremium) {
+      Alert.alert(
+        'Premium Feature 💎',
+        'Audio/Video switch is a Premium feature! Upgrade for just $1/month!',
+        [
+          { text: 'Maybe Later' },
+          { text: 'Go Premium', onPress: () => navigation.navigate('Paywall') }
+        ]
+      );
+      return;
+    }
+    setShowVideo(!showVideo);
+    Alert.alert(
+      showVideo ? '🎵 Audio Mode' : '🎬 Video Mode',
+      showVideo ? 'Switched to audio mode' : 'Switched to video mode — video feature coming soon!'
+    );
+  };
+
   const setSleepTimer = (minutes, label) => {
     if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
     setSleepTimerLabel(label);
     setShowSleepTimer(false);
 
     if (minutes === 'end') {
-      if (sound) {
-        sound.setOnPlaybackStatusUpdate((status) => {
+      if (soundRef.current) {
+        soundRef.current.setOnPlaybackStatusUpdate((status) => {
           setIsPlaying(status.isPlaying);
           if (status.didJustFinish) {
-            sound.unloadAsync();
+            soundRef.current.unloadAsync();
+            soundRef.current = null;
             setSound(null);
             setIsPlaying(false);
             setSleepTimerLabel(null);
@@ -153,8 +259,8 @@ export default function PlayerScreen({ navigation, route }) {
 
     const ms = minutes * 60 * 1000;
     sleepTimerRef.current = setTimeout(async () => {
-      if (sound) {
-        await sound.pauseAsync();
+      if (soundRef.current) {
+        await soundRef.current.pauseAsync();
         setIsPlaying(false);
       }
       setSleepTimerLabel(null);
@@ -176,10 +282,22 @@ export default function PlayerScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setShowSleepTimer(true)}>
-          <Text style={styles.timerIcon}>🌙 {sleepTimerLabel || 'Timer'}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          {!isPremium && (
+            <Text style={styles.skipsText}>⏭ {skipsRemaining} skips left</Text>
+          )}
+          <TouchableOpacity onPress={() => setShowSleepTimer(true)}>
+            <Text style={styles.timerIcon}>🌙 {sleepTimerLabel || 'Timer'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Premium Badge */}
+      {isPremium && (
+        <View style={styles.premiumBadge}>
+          <Text style={styles.premiumBadgeText}>💎 Premium</Text>
+        </View>
+      )}
 
       {/* Album Art */}
       <View style={styles.albumArt}>
@@ -196,10 +314,24 @@ export default function PlayerScreen({ navigation, route }) {
         <Text style={styles.songArtist}>{currentSong.artist}</Text>
       </View>
 
+      {/* Audio/Video Toggle */}
+      <TouchableOpacity
+        style={[styles.videoToggle, !isPremium && styles.videoToggleLocked]}
+        onPress={toggleVideoAudio}>
+        <Text style={styles.videoToggleText}>
+          {showVideo ? '🎵 Switch to Audio' : '🎬 Switch to Video'}
+          {!isPremium && ' 💎'}
+        </Text>
+      </TouchableOpacity>
+
       {/* Controls */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={toggleFavourite}>
           <Text style={styles.controlIcon}>{isFavourite ? '❤️' : '🤍'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={playPrevious} style={styles.controlButton}>
+          <Text style={[styles.controlIcon, !isPremium && styles.lockedControl]}>⏮</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.playButton} onPress={playPauseSound}>
@@ -208,6 +340,10 @@ export default function PlayerScreen({ navigation, route }) {
 
         <TouchableOpacity onPress={playNext}>
           <Text style={styles.controlIcon}>⏭</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => navigation.navigate('Paywall')}>
+          <Text style={styles.controlIcon}>💎</Text>
         </TouchableOpacity>
       </View>
 
@@ -229,7 +365,6 @@ export default function PlayerScreen({ navigation, route }) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>🌙 Sleep Timer</Text>
-
             {[
               { label: '30 minutes', value: 30 },
               { label: '45 minutes', value: 45 },
@@ -245,13 +380,11 @@ export default function PlayerScreen({ navigation, route }) {
                 <Text style={styles.timerOptionText}>{option.label}</Text>
               </TouchableOpacity>
             ))}
-
             {sleepTimerLabel && (
               <TouchableOpacity style={styles.cancelTimer} onPress={cancelSleepTimer}>
                 <Text style={styles.cancelTimerText}>❌ Cancel Timer</Text>
               </TouchableOpacity>
             )}
-
             <TouchableOpacity
               style={styles.closeModal}
               onPress={() => setShowSleepTimer(false)}>
@@ -277,66 +410,110 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   backText: {
     color: '#1DB954',
     fontSize: 16,
+  },
+  skipsText: {
+    color: '#888',
+    fontSize: 12,
   },
   timerIcon: {
     color: '#1DB954',
     fontSize: 14,
   },
+  premiumBadge: {
+    backgroundColor: '#FFD700',
+    padding: 5,
+    borderRadius: 10,
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  premiumBadgeText: {
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
   albumArt: {
-    width: 250,
-    height: 250,
+    width: 200,
+    height: 200,
     backgroundColor: '#282828',
     borderRadius: 10,
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 30,
+    marginBottom: 15,
   },
   albumImage: {
-    width: 250,
-    height: 250,
+    width: 200,
+    height: 200,
     borderRadius: 10,
   },
   albumEmoji: {
-    fontSize: 80,
+    fontSize: 70,
   },
   songInfo: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 10,
   },
   songTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 8,
+    marginBottom: 5,
   },
   songArtist: {
     fontSize: 16,
     color: '#888',
   },
+  videoToggle: {
+    backgroundColor: '#1A1A1A',
+    padding: 10,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#1DB954',
+  },
+  videoToggleLocked: {
+    borderColor: '#FFD700',
+  },
+  videoToggleText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 30,
-    gap: 30,
+    marginBottom: 15,
+    gap: 20,
+  },
+  controlButton: {
+    padding: 5,
   },
   controlIcon: {
-    fontSize: 30,
+    fontSize: 28,
+  },
+  lockedControl: {
+    opacity: 0.3,
   },
   playButton: {
-    width: 70,
-    height: 70,
+    width: 65,
+    height: 65,
     backgroundColor: '#1DB954',
-    borderRadius: 35,
+    borderRadius: 33,
     alignItems: 'center',
     justifyContent: 'center',
   },
   playIcon: {
-    fontSize: 30,
+    fontSize: 28,
   },
   lyricsContainer: {
     backgroundColor: '#282828',

@@ -64,7 +64,7 @@ export default function OnboardingScreen({ navigation }) {
       Alert.alert('Select 3 artists', 'Please select exactly 3 favourite artists to continue');
       return;
     }
-    navigation.navigate('Home');
+    navigation.navigate('Main');
   };
 
   return (
