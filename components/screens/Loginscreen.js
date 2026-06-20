@@ -1,114 +1,234 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
- const handleLogin = async () => {
+  const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
+    setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
       navigation.navigate('Main');
     } catch (error) {
       Alert.alert('Error', 'Invalid email or password');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.logo}>Sonara 🎵</Text>
-      <Text style={styles.tagline}>Music for everyone</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor="#888"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-      />
+      {/* Logo Section */}
+      <View style={styles.logoSection}>
+        <View style={styles.logoCircle}>
+          <Text style={styles.logoEmoji}>🎵</Text>
+        </View>
+        <Text style={styles.logo}>Sonara</Text>
+        <Text style={styles.tagline}>Music for everyone</Text>
+      </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor="#888"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+      {/* Form Section */}
+      <View style={styles.formSection}>
+        <Text style={styles.formTitle}>Welcome back!</Text>
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Login</Text>
-      </TouchableOpacity>
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your email"
+            placeholderTextColor="#555"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+          />
+        </View>
 
-      <TouchableOpacity 
-        style={styles.buttonOutline}
-        onPress={() => navigation.navigate('SignUp')}>
-        <Text style={styles.buttonOutlineText}>Create Account</Text>
-      </TouchableOpacity>
-    </View>
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Password</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your password"
+            placeholderTextColor="#555"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+        </View>
+
+        <TouchableOpacity 
+  style={styles.forgotPassword}
+  onPress={() => Alert.alert(
+    'Reset Password',
+    'Enter your email address and we will send you a reset link!',
+    [
+      { text: 'Cancel' },
+      { 
+        text: 'Send Reset Link', 
+        onPress: () => Alert.alert('Success', 'Password reset link sent to your email! 📧')
+      }
+    ]
+  )}>
+  <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+</TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleLogin}
+          disabled={loading}>
+          <Text style={styles.buttonText}>{loading ? 'Logging in...' : 'Login'}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>OR</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <TouchableOpacity
+          style={styles.buttonOutline}
+          onPress={() => navigation.navigate('SignUp')}>
+          <Text style={styles.buttonOutlineText}>Create New Account</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#0A0A0A',
+  },
+  logoSection: {
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingBottom: 40,
+  },
+  logoCircle: {
+    width: 90,
+    height: 90,
+    backgroundColor: '#1DB954',
+    borderRadius: 45,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#1DB954',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  logoEmoji: {
+    fontSize: 45,
   },
   logo: {
-    fontSize: 42,
+    fontSize: 36,
     fontWeight: 'bold',
-    color: '#1DB954',
-    marginBottom: 10,
+    color: '#fff',
+    letterSpacing: 2,
   },
   tagline: {
-    fontSize: 16,
+    fontSize: 14,
+    color: '#888',
+    marginTop: 5,
+  },
+  formSection: {
+    flex: 1,
+    backgroundColor: '#111',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    padding: 30,
+  },
+  formTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 40,
+    marginBottom: 25,
+  },
+  inputContainer: {
+    marginBottom: 15,
+  },
+  inputLabel: {
+    color: '#888',
+    fontSize: 13,
+    marginBottom: 8,
+    fontWeight: 'bold',
   },
   input: {
-    width: '100%',
-    backgroundColor: '#282828',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 15,
     color: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    fontSize: 16,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#282828',
+  },
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginBottom: 20,
+  },
+  forgotPasswordText: {
+    color: '#1DB954',
+    fontSize: 13,
   },
   button: {
     backgroundColor: '#1DB954',
-    width: '100%',
-    padding: 15,
-    borderRadius: 25,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 15,
-    marginTop: 10,
+    marginBottom: 20,
+    shadowColor: '#1DB954',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  buttonDisabled: {
+    backgroundColor: '#145c30',
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#282828',
+  },
+  dividerText: {
+    color: '#555',
+    paddingHorizontal: 15,
+    fontSize: 13,
   },
   buttonOutline: {
     borderWidth: 1,
-    borderColor: '#fff',
-    width: '100%',
-    padding: 15,
-    borderRadius: 25,
+    borderColor: '#1DB954',
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
   },
   buttonOutlineText: {
-    color: '#fff',
+    color: '#1DB954',
     fontSize: 16,
     fontWeight: 'bold',
   },

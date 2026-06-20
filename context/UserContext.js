@@ -1,4 +1,4 @@
- import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 
 const UserContext = createContext();
 
@@ -6,9 +6,9 @@ export function UserProvider({ children }) {
   const [isPremium, setIsPremium] = useState(false);
   const [skipsUsed, setSkipsUsed] = useState(0);
   const [skipsResetTime, setSkipsResetTime] = useState(Date.now());
+  const [favouriteArtists, setFavouriteArtists] = useState([]);
 
   const useSkip = () => {
-    // Reset skips after 1 hour
     if (Date.now() - skipsResetTime > 3600000) {
       setSkipsUsed(0);
       setSkipsResetTime(Date.now());
@@ -29,6 +29,8 @@ export function UserProvider({ children }) {
       skipsUsed,
       skipsRemaining,
       useSkip,
+      favouriteArtists,
+      setFavouriteArtists,
     }}>
       {children}
     </UserContext.Provider>

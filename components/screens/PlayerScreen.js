@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View, TouchableOpacity, Image, Alert, Modal, ScrollView } from 'react-native';
 import { Audio } from 'expo-av';
 import NetInfo from '@react-native-community/netinfo';
@@ -52,6 +53,7 @@ export default function PlayerScreen({ navigation, route }) {
   const [sleepTimerLabel, setSleepTimerLabel] = useState(null);
   const [songsPlayed, setSongsPlayed] = useState(0);
   const [showVideo, setShowVideo] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const sleepTimerRef = useRef(null);
   const currentSongIndexRef = useRef(0);
   const soundRef = useRef(null);
@@ -111,7 +113,6 @@ export default function PlayerScreen({ navigation, route }) {
       newSound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded) {
           setIsPlaying(status.isPlaying);
-          // Auto play next song when current song finishes
           if (status.didJustFinish) {
             const nextIndex = (currentSongIndexRef.current + 1) % SAMPLE_SONGS.length;
             currentSongIndexRef.current = nextIndex;
@@ -327,23 +328,35 @@ export default function PlayerScreen({ navigation, route }) {
       {/* Controls */}
       <View style={styles.controls}>
         <TouchableOpacity onPress={toggleFavourite}>
-          <Text style={styles.controlIcon}>{isFavourite ? '❤️' : '🤍'}</Text>
+          <Ionicons
+            name={isFavourite ? 'heart' : 'heart-outline'}
+            size={28}
+            color={isFavourite ? '#1DB954' : '#fff'}
+          />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={playPrevious} style={styles.controlButton}>
-          <Text style={[styles.controlIcon, !isPremium && styles.lockedControl]}>⏮</Text>
+          <Ionicons
+            name="play-skip-back"
+            size={28}
+            color={isPremium ? '#fff' : 'rgba(255,255,255,0.3)'}
+          />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.playButton} onPress={playPauseSound}>
-          <Text style={styles.playIcon}>{isPlaying ? '⏸' : '▶️'}</Text>
+          <Ionicons
+            name={isPlaying ? 'pause' : 'play'}
+            size={32}
+            color="#fff"
+          />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={playNext}>
-          <Text style={styles.controlIcon}>⏭</Text>
+          <Ionicons name="play-skip-forward" size={28} color="#fff" />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigation.navigate('Paywall')}>
-          <Text style={styles.controlIcon}>💎</Text>
+        <TouchableOpacity onPress={() => setShowShare(true)}>
+          <Ionicons name="share-social-outline" size={28} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -389,6 +402,74 @@ export default function PlayerScreen({ navigation, route }) {
               style={styles.closeModal}
               onPress={() => setShowSleepTimer(false)}>
               <Text style={styles.closeModalText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Share Modal */}
+      <Modal visible={showShare} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Share Song 📤</Text>
+            <Text style={styles.shareSubtitle}>
+              "{currentSong.title}" by {currentSong.artist}
+            </Text>
+
+            <View style={styles.shareGrid}>
+              <TouchableOpacity
+                style={styles.shareOption}
+                onPress={() => {
+                  setShowShare(false);
+                  Alert.alert('WhatsApp', 'Opening WhatsApp...');
+                }}>
+                <View style={[styles.shareIconBg, { backgroundColor: '#25D366' }]}>
+                  <Ionicons name="logo-whatsapp" size={30} color="#fff" />
+                </View>
+                <Text style={styles.shareOptionText}>WhatsApp</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.shareOption}
+                onPress={() => {
+                  setShowShare(false);
+                  Alert.alert('Instagram', 'Opening Instagram...');
+                }}>
+                <View style={[styles.shareIconBg, { backgroundColor: '#E1306C' }]}>
+                  <Ionicons name="logo-instagram" size={30} color="#fff" />
+                </View>
+                <Text style={styles.shareOptionText}>Instagram</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.shareOption}
+                onPress={() => {
+                  setShowShare(false);
+                  Alert.alert('Twitter/X', 'Opening Twitter/X...');
+                }}>
+                <View style={[styles.shareIconBg, { backgroundColor: '#1DA1F2' }]}>
+                  <Ionicons name="logo-twitter" size={30} color="#fff" />
+                </View>
+                <Text style={styles.shareOptionText}>Twitter/X</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.shareOption}
+                onPress={() => {
+                  setShowShare(false);
+                  Alert.alert('Facebook', 'Opening Facebook...');
+                }}>
+                <View style={[styles.shareIconBg, { backgroundColor: '#1877F2' }]}>
+                  <Ionicons name="logo-facebook" size={30} color="#fff" />
+                </View>
+                <Text style={styles.shareOptionText}>Facebook</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.closeModal}
+              onPress={() => setShowShare(false)}>
+              <Text style={styles.closeModalText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -498,12 +579,6 @@ const styles = StyleSheet.create({
   controlButton: {
     padding: 5,
   },
-  controlIcon: {
-    fontSize: 28,
-  },
-  lockedControl: {
-    opacity: 0.3,
-  },
   playButton: {
     width: 65,
     height: 65,
@@ -511,9 +586,6 @@ const styles = StyleSheet.create({
     borderRadius: 33,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  playIcon: {
-    fontSize: 28,
   },
   lyricsContainer: {
     backgroundColor: '#282828',
@@ -591,5 +663,32 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  shareSubtitle: {
+    color: '#888',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 25,
+    marginTop: -10,
+  },
+  shareGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 25,
+  },
+  shareOption: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  shareIconBg: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareOptionText: {
+    color: '#fff',
+    fontSize: 12,
   },
 });

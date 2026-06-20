@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
 
@@ -8,6 +8,7 @@ export default function SignUpScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleSignUp = async () => {
     if (!name || !email || !password || !confirmPassword) {
@@ -22,111 +23,239 @@ export default function SignUpScreen({ navigation }) {
       Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
+    setLoading(true);
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      await createUserWithEmailAndPassword(auth, email.trim(), password);
       navigation.navigate('Onboarding');
     } catch (error) {
       Alert.alert('Error', error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.logo}>Sonara 🎵</Text>
-      <Text style={styles.title}>Create Account</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Full Name"
-        placeholderTextColor="#888"
-        value={name}
-        onChangeText={setName}
-      />
+        {/* Logo Section */}
+        <View style={styles.logoSection}>
+          <View style={styles.logoCircle}>
+            <Text style={styles.logoEmoji}>🎵</Text>
+          </View>
+          <Text style={styles.logo}>Sonara</Text>
+          <Text style={styles.tagline}>Join millions of music lovers</Text>
+        </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor="#888"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-      />
+        {/* Form Section */}
+        <View style={styles.formSection}>
+          <Text style={styles.formTitle}>Create Account</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor="#888"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Full Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your full name"
+              placeholderTextColor="#555"
+              value={name}
+              onChangeText={setName}
+            />
+          </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Confirm Password"
-        placeholderTextColor="#888"
-        secureTextEntry
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-      />
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              placeholderTextColor="#555"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+            />
+          </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleSignUp}>
-        <Text style={styles.buttonText}>Create Account</Text>
-      </TouchableOpacity>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Create a password"
+              placeholderTextColor="#555"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+          </View>
 
-      <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-        <Text style={styles.loginText}>Already have an account? Login</Text>
-      </TouchableOpacity>
-    </ScrollView>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Confirm Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm your password"
+              placeholderTextColor="#555"
+              secureTextEntry
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleSignUp}
+            disabled={loading}>
+            <Text style={styles.buttonText}>
+              {loading ? 'Creating Account...' : 'Create Account'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.buttonOutline}
+            onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.buttonOutlineText}>Already have an account? Login</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.terms}>
+            By creating an account you agree to our Terms of Service and Privacy Policy
+          </Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
-    backgroundColor: '#121212',
+    flex: 1,
+    backgroundColor: '#0A0A0A',
+  },
+  logoSection: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingBottom: 30,
+  },
+  logoCircle: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#1DB954',
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    marginBottom: 12,
+    shadowColor: '#1DB954',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  logoEmoji: {
+    fontSize: 40,
   },
   logo: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: 'bold',
-    color: '#1DB954',
-    marginBottom: 10,
+    color: '#fff',
+    letterSpacing: 2,
   },
-  title: {
+  tagline: {
+    fontSize: 13,
+    color: '#888',
+    marginTop: 5,
+  },
+  formSection: {
+    backgroundColor: '#111',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    padding: 30,
+    minHeight: 500,
+  },
+  formTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 30,
+    marginBottom: 25,
+  },
+  inputContainer: {
+    marginBottom: 15,
+  },
+  inputLabel: {
+    color: '#888',
+    fontSize: 13,
+    marginBottom: 8,
+    fontWeight: 'bold',
   },
   input: {
-    width: '100%',
-    backgroundColor: '#282828',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 15,
     color: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    fontSize: 16,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#282828',
   },
   button: {
     backgroundColor: '#1DB954',
-    width: '100%',
-    padding: 15,
-    borderRadius: 25,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
     marginBottom: 20,
     marginTop: 10,
+    shadowColor: '#1DB954',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  buttonDisabled: {
+    backgroundColor: '#145c30',
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    letterSpacing: 1,
   },
-  loginText: {
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#282828',
+  },
+  dividerText: {
+    color: '#555',
+    paddingHorizontal: 15,
+    fontSize: 13,
+  },
+  buttonOutline: {
+    borderWidth: 1,
+    borderColor: '#1DB954',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  buttonOutlineText: {
     color: '#1DB954',
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  terms: {
+    color: '#555',
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 30,
   },
 });

@@ -1,7 +1,8 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import LoginScreen from './components/screens/LoginScreen';
 import SignUpScreen from './components/screens/SignUpScreen';
 import OnboardingScreen from './components/screens/OnboardingScreen';
@@ -11,9 +12,9 @@ import SearchScreen from './components/screens/SearchScreen';
 import LibraryScreen from './components/screens/LibraryScreen';
 import PremiumScreen from './components/screens/PremiumScreen';
 import CreateScreen from './components/screens/CreateScreen';
-import ShareScreen from './components/screens/ShareScreen';
 import ArtistScreen from './components/screens/ArtistScreen';
 import HomeScreen from './components/screens/HomeScreen';
+import ProfileScreen from './components/screens/ProfileScreen';
 import { UserProvider } from './context/UserContext';
 
 const Stack = createNativeStackNavigator();
@@ -43,7 +44,9 @@ function MainTabs() {
         name="Home"
         component={HomeScreen}
         options={{
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>🏠</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color} />
+          ),
           tabBarLabel: 'Home',
         }}
       />
@@ -51,7 +54,9 @@ function MainTabs() {
         name="Search"
         component={SearchScreen}
         options={{
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>🔍</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="search-outline" size={size} color={color} />
+          ),
           tabBarLabel: 'Search',
         }}
       />
@@ -59,7 +64,9 @@ function MainTabs() {
         name="Library"
         component={LibraryScreen}
         options={{
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>📚</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="library-outline" size={size} color={color} />
+          ),
           tabBarLabel: 'Library',
         }}
       />
@@ -67,16 +74,20 @@ function MainTabs() {
         name="Create"
         component={CreateScreen}
         options={{
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>➕</Text>,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="add-circle-outline" size={size} color={color} />
+          ),
           tabBarLabel: 'Create',
         }}
       />
       <Tab.Screen
-        name="Share"
-        component={ShareScreen}
+        name="Premium"
+        component={PremiumScreen}
         options={{
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>📤</Text>,
-          tabBarLabel: 'Share',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="diamond-outline" size={size} color={color} />
+          ),
+          tabBarLabel: 'Premium',
         }}
       />
     </Tab.Navigator>
@@ -89,8 +100,8 @@ function MainStack() {
       <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="Player" component={PlayerScreen} />
       <Stack.Screen name="Paywall" component={PaywallScreen} />
-      <Stack.Screen name="Premium" component={PremiumScreen} />
       <Stack.Screen name="Artist" component={ArtistScreen} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
     </Stack.Navigator>
   );
 }
