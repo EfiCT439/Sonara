@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, FlatList } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, FlatList, Image } from 'react-native';
 import { useUser } from '../../context/UserContext';
 
 const TRENDING_BY_GENRE = {
@@ -33,7 +33,7 @@ const TRENDING_BY_GENRE = {
 };
 
 export default function HomeScreen({ navigation }) {
-  const { isPremium, favouriteArtists } = useUser();
+  const { isPremium, favouriteArtists, profileImage } = useUser();
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -123,7 +123,11 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity
           style={styles.avatar}
           onPress={() => navigation.navigate('Profile')}>
-          <Text style={styles.avatarText}>👤</Text>
+          {profileImage ? (
+            <Image source={{ uri: profileImage }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.avatarText}>👤</Text>
+          )}
           {isPremium && <View style={styles.premiumDot} />}
         </TouchableOpacity>
       </View>
@@ -193,6 +197,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 45,
+    height: 45,
+    borderRadius: 22,
   },
   avatarText: {
     fontSize: 22,

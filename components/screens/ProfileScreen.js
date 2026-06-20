@@ -1,13 +1,13 @@
 import { useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
 import { useUser } from '../../context/UserContext';
 
 export default function ProfileScreen({ navigation }) {
-  const { isPremium, setIsPremium, favouriteArtists } = useUser();
+  const { isPremium, setIsPremium, favouriteArtists, profileImage, setProfileImage } = useUser();
   const [user] = useState(auth.currentUser);
-  const [profileImage, setProfileImage] = useState(null);
 
   const handleLogout = () => {
     Alert.alert(
@@ -54,7 +54,7 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
-  const handleUploadPhoto = () => {
+ const handleUploadPhoto = async () => {
     Alert.alert(
       '📸 Profile Photo',
       'Choose an option',
@@ -62,11 +62,39 @@ export default function ProfileScreen({ navigation }) {
         { text: 'Cancel' },
         {
           text: '📷 Take Photo',
-          onPress: () => Alert.alert('Coming Soon', 'Camera feature coming in next update!')
+          onPress: async () => {
+            const permission = await ImagePicker.requestCameraPermissionsAsync();
+            if (!permission.granted) {
+              Alert.alert('Permission needed', 'Please allow camera access!');
+              return;
+            }
+            const result = await ImagePicker.launchCameraAsync({
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.8,
+            });
+            if (!result.canceled) {
+              setProfileImage(result.assets[0].uri);
+            }
+          }
         },
         {
           text: '🖼️ Choose from Gallery',
-          onPress: () => Alert.alert('Coming Soon', 'Gallery feature coming in next update!')
+          onPress: async () => {
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+              Alert.alert('Permission needed', 'Please allow gallery access!');
+              return;
+            }
+            const result = await ImagePicker.launchImageLibraryAsync({
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.8,
+            });
+            if (!result.canceled) {
+              setProfileImage(result.assets[0].uri);
+            }
+          }
         },
         {
           text: '🗑️ Remove Photo',
@@ -76,7 +104,6 @@ export default function ProfileScreen({ navigation }) {
       ]
     );
   };
-
   const handleNotifications = () => {
     Alert.alert(
       '🔔 Notifications',

@@ -7,6 +7,7 @@ export function UserProvider({ children }) {
   const [skipsUsed, setSkipsUsed] = useState(0);
   const [skipsResetTime, setSkipsResetTime] = useState(Date.now());
   const [favouriteArtists, setFavouriteArtists] = useState([]);
+  const [profileImage, setProfileImage] = useState(null);
 
   const useSkip = () => {
     if (Date.now() - skipsResetTime > 3600000) {
@@ -31,6 +32,8 @@ export function UserProvider({ children }) {
       useSkip,
       favouriteArtists,
       setFavouriteArtists,
+      profileImage,
+      setProfileImage,
     }}>
       {children}
     </UserContext.Provider>
