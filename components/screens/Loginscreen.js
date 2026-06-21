@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../../firebaseConfig';
+import { getDoc, doc } from 'firebase/firestore';
+import { auth, db } from '../../firebaseConfig';
+import { useUser } from '../../context/UserContext';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const { setFavouriteArtists } = useUser();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -15,7 +18,18 @@ export default function LoginScreen({ navigation }) {
     }
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
+
+      // Load user's favourite artists from Firebase
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        if (userData.favouriteArtists) {
+          setFavouriteArtists(userData.favouriteArtists);
+        }
+      }
+
       navigation.navigate('Main');
     } catch (error) {
       Alert.alert('Error', 'Invalid email or password');
@@ -67,21 +81,21 @@ export default function LoginScreen({ navigation }) {
           />
         </View>
 
-        <TouchableOpacity 
-  style={styles.forgotPassword}
-  onPress={() => Alert.alert(
-    'Reset Password',
-    'Enter your email address and we will send you a reset link!',
-    [
-      { text: 'Cancel' },
-      { 
-        text: 'Send Reset Link', 
-        onPress: () => Alert.alert('Success', 'Password reset link sent to your email! 📧')
-      }
-    ]
-  )}>
-  <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-</TouchableOpacity>
+        <TouchableOpacity
+          style={styles.forgotPassword}
+          onPress={() => Alert.alert(
+            'Reset Password',
+            'Enter your email address and we will send you a reset link!',
+            [
+              { text: 'Cancel' },
+              {
+                text: 'Send Reset Link',
+                onPress: () => Alert.alert('Success', 'Password reset link sent to your email! 📧')
+              }
+            ]
+          )}>
+          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}

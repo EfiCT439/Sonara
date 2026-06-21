@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Alert, TextInput } from 'react-native';
 import { useUser } from '../../context/UserContext';
+import { doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../../firebaseConfig';
 
 const ARTISTS = [
   { id: '1', name: 'Burna Boy', genre: 'Afrobeats', emoji: '🎤' },
@@ -33,7 +35,7 @@ const ARTIST_SONGS = {
     { id: 'wz3', title: 'Come Closer', artist: 'Wizkid', emoji: '🎸', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
   ],
   'Drake': [
-    { id: 'dr1', title: 'God\'s Plan', artist: 'Drake', emoji: '🎵', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+    { id: 'dr1', title: "God's Plan", artist: 'Drake', emoji: '🎵', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
     { id: 'dr2', title: 'Hotline Bling', artist: 'Drake', emoji: '🎶', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
     { id: 'dr3', title: 'One Dance', artist: 'Drake', emoji: '🎸', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
   ],
@@ -64,6 +66,7 @@ export default function OnboardingScreen({ navigation }) {
   const [selectedArtists, setSelectedArtists] = useState([]);
   const [search, setSearch] = useState('');
   const [customArtists, setCustomArtists] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const filteredArtists = [...ARTISTS, ...customArtists].filter(artist =>
     artist.name.toLowerCase().includes(search.toLowerCase())
@@ -95,29 +98,46 @@ export default function OnboardingScreen({ navigation }) {
       name: search.trim(),
       genre: 'Custom',
       emoji: '🎤',
-      songs: ARTIST_SONGS['default'],
     };
     setCustomArtists([...customArtists, newArtist]);
     setSearch('');
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selectedArtists.length < 3) {
       Alert.alert('Select 3 artists', 'Please select exactly 3 favourite artists to continue');
       return;
     }
-    // Save selected artists with their songs to context
-    const artistsWithSongs = selectedArtists.map(artist => ({
-      ...artist,
-      songs: ARTIST_SONGS[artist.name] || ARTIST_SONGS['default'],
-    }));
-    setFavouriteArtists(artistsWithSongs);
-    navigation.navigate('Main');
+
+    setLoading(true);
+    try {
+      const artistsWithSongs = selectedArtists.map(artist => ({
+        ...artist,
+        songs: ARTIST_SONGS[artist.name] || ARTIST_SONGS['default'],
+      }));
+
+      // Save to Firebase Firestore
+      const user = auth.currentUser;
+      if (user) {
+        await setDoc(doc(db, 'users', user.uid), {
+          email: user.email,
+          favouriteArtists: artistsWithSongs,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      // Save to UserContext
+      setFavouriteArtists(artistsWithSongs);
+      navigation.navigate('Main');
+    } catch (error) {
+      Alert.alert('Error', 'Could not save your artists. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.stepText}>Step 1 of 1</Text>
         <View style={styles.progressBar}>
@@ -141,7 +161,6 @@ export default function OnboardingScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
           <Text style={styles.searchIcon}>🔍</Text>
@@ -165,7 +184,6 @@ export default function OnboardingScreen({ navigation }) {
         )}
       </View>
 
-      {/* Artists Grid */}
       <ScrollView style={styles.artistList} showsVerticalScrollIndicator={false}>
         <View style={styles.grid}>
           {filteredArtists.map(artist => {
@@ -193,15 +211,16 @@ export default function OnboardingScreen({ navigation }) {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Continue Button */}
       <View style={styles.bottomButton}>
         <TouchableOpacity
-          style={[styles.button, selectedArtists.length < 3 && styles.buttonDisabled]}
-          onPress={handleContinue}>
+          style={[styles.button, (selectedArtists.length < 3 || loading) && styles.buttonDisabled]}
+          onPress={handleContinue}
+          disabled={loading}>
           <Text style={styles.buttonText}>
-            {selectedArtists.length < 3
-              ? `Select ${3 - selectedArtists.length} more artist${3 - selectedArtists.length !== 1 ? 's' : ''}`
-              : 'Continue to Sonara →'}
+            {loading ? 'Saving...' :
+              selectedArtists.length < 3
+                ? `Select ${3 - selectedArtists.length} more artist${3 - selectedArtists.length !== 1 ? 's' : ''}`
+                : 'Continue to Sonara →'}
           </Text>
         </TouchableOpacity>
       </View>
