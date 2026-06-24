@@ -8,12 +8,13 @@ Supports Android and iOS.
 - React Native + Expo SDK 54 (Frontend)
 - Node.js + Express (Backend)
 - MongoDB Atlas (Database)
-- Firebase Authentication
+- Firebase Authentication + Firestore
 - expo-av (Audio/Video)
 - Flutterwave (Payments - to be integrated)
 - Google AdMob (Ads - to be integrated)
-- @expo/vector-icons (Icons)
+- @expo/vector-icons (Ionicons)
 - @react-navigation/bottom-tabs (Bottom Navigation)
+- expo-image-picker (Profile photo)
 
 ## GitHub Repositories
 - Frontend: https://github.com/EfiCT439/Sonara
@@ -27,7 +28,8 @@ Supports Android and iOS.
 - Firebase authentication (Email/Password)
 - Onboarding screen with progress bar
 - Choose 3 favourite artists with search & custom add
-- Artists saved to UserContext for personalization
+- Artists saved to Firebase Firestore permanently
+- Artists loaded from Firebase on every login
 
 ### Phase 2 - Backend & Database ✅
 - Node.js + Express server running on port 5000
@@ -36,6 +38,7 @@ Supports Android and iOS.
 - Song model (audio, video, lyrics, plays)
 - Artist model (followers, songs)
 - All API routes (songs, artists, users)
+- Firebase Firestore for user data
 
 ### Phase 3 - Core Music Player ✅
 - Audio playback with expo-av
@@ -61,23 +64,32 @@ Supports Android and iOS.
 - Bottom navigation (Home, Search, Library, Create, Premium)
 - Home screen with trending songs by category
 - Your artists section (based on onboarding choices)
-- Search screen with search history and genre filters
+- Search screen with:
+  - Morning/Afternoon/Evening Vibes
+  - Colorful genre cards (Afrobeats, Hip Hop, Pop, Gospel, Praise, Worship)
+  - Real time search results
+  - Search history (stays visible after keyboard dismissed)
+  - Recommended songs
 - Library screen with liked songs, playlists, artists
 - Create screen for playlist management
-- Profile screen (logout, add account, update photo)
+- Profile screen:
+  - Upload/change profile photo (camera & gallery)
+  - Profile image persists across screens
+  - Logout & add account
+  - Notifications & Privacy settings
 - Artist screen with follow button and songs
 - Paywall screen with payment methods
+- Share modal on Player screen
 
 ## In Progress 🔄
 
-### Remaining Features to Complete:
-- Library screen — show all liked songs properly
-- Search screen — show trending songs when category tapped
+### Remaining Features:
+- Library screen improvements
 - Flutterwave payment integration ($1/month Premium)
+- Mini player (shows when leaving player screen)
 - Real artist images via Last.fm API
 - Background audio (requires app store build)
 - Lock screen controls
-- MiniPlayer (shows when leaving player screen)
 
 ## Upcoming 🔜
 
@@ -99,6 +111,8 @@ Supports Android and iOS.
 - Ads every 3 songs (Free tier)
 - Share songs to WhatsApp, Instagram, Twitter, Facebook
 - Artist personalization based on onboarding choices
+- Morning/Afternoon/Evening Vibes on search screen
+- Search history persists and playable directly
 
 ## Payment Methods 💳
 - Credit/Debit Card (Flutterwave)
@@ -115,3 +129,4 @@ Supports Android and iOS.
 - Real song URLs needed (currently using sample MP3s)
 - Real artist images needed (Last.fm API - Phase 6)
 - Flutterwave payment not yet integrated
+- Mini player not yet implemented
