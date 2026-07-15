@@ -1,0 +1,689 @@
+import { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  StyleSheet, Text, View, TouchableOpacity, ScrollView,
+  TextInput, Alert, Modal, Animated, Image,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useUser } from '../../context/UserContext';
+import api from '../../services/api';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const GENRES = [
+  'Afrobeats', 'Amapiano', 'Gospel', 'Hip Hop', 'R&B',
+  'Pop', 'Soul', 'Jazz', 'Reggae', 'Dancehall',
+  'Highlife', 'Rock', 'Electronic', 'Classical', 'Country', 'Bongo Flava',
+];
+
+const CYCLE_MESSAGES = [
+  'Composing your melody…',
+  'Building the rhythm section…',
+  'Adding harmonics…',
+  'Layering instruments…',
+  'Mixing your track…',
+  'Finalizing production…',
+];
+
+const NUM_GEN_BARS = 18;
+
+// Pre-computed wave params so animation is consistent across re-renders
+const GEN_BAR_PARAMS = Array.from({ length: NUM_GEN_BARS }, (_, i) => {
+  const center = (NUM_GEN_BARS - 1) / 2;
+  const dist = Math.abs(i - center) / center;
+  return {
+    peak: Math.round((0.45 + (1 - dist) * 0.45) * 80),
+    trough: 6 + (i % 4) * 4,
+    duration: 320 + (i % 7) * 65,
+  };
+});
+
+// ─── Module-scope sub-components (keyboard-bug rule) ─────────────────────────
+
+function GenreChip({ genre, selected, onPress }) {
+  return (
+    <TouchableOpacity
+      style={[styles.genreChip, selected && styles.genreChipActive]}
+      onPress={onPress}
+      activeOpacity={0.75}>
+      <Text style={[styles.genreChipText, selected && styles.genreChipTextActive]}>
+        {genre}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function SaveSheet({ visible, playlists, onSaveToExisting, onCreateNew, onClose }) {
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const regularPlaylists = (playlists || []).filter(p => !p.isLikedSongs);
+
+  const reset = () => { setNewName(''); setCreating(false); };
+
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleCreate = () => {
+    if (!newName.trim()) return;
+    onCreateNew(newName.trim());
+    reset();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.overlay}>
+        <View style={styles.saveSheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Save to Playlist</Text>
+
+          {!creating ? (
+            <>
+              <TouchableOpacity
+                style={styles.createNewRow}
+                onPress={() => setCreating(true)}
+                activeOpacity={0.75}>
+                <View style={styles.createNewIcon}>
+                  <Ionicons name="add" size={18} color="#888" />
+                </View>
+                <Text style={styles.createNewText}>Create New Playlist</Text>
+                <Ionicons name="chevron-forward" size={15} color="#333" />
+              </TouchableOpacity>
+
+              {regularPlaylists.length > 0 && (
+                <>
+                  <Text style={styles.orLabel}>or choose existing</Text>
+                  <ScrollView style={styles.playlistScroll} showsVerticalScrollIndicator={false}>
+                    {regularPlaylists.map(pl => (
+                      <TouchableOpacity
+                        key={pl.id}
+                        style={styles.playlistPickRow}
+                        onPress={() => onSaveToExisting(pl.id)}
+                        activeOpacity={0.75}>
+                        <Text style={styles.playlistPickEmoji}>{pl.emoji}</Text>
+                        <Text style={styles.playlistPickName}>{pl.name}</Text>
+                        <Text style={styles.playlistPickCount}>{pl.songs?.length || 0}</Text>
+                        <Ionicons name="chevron-forward" size={14} color="#333" />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
+            </>
+          ) : (
+            <View style={styles.createForm}>
+              <Text style={styles.sheetLabel}>Playlist name</Text>
+              <TextInput
+                style={styles.sheetInput}
+                placeholder="e.g. My AI Vibes"
+                placeholderTextColor="#333"
+                value={newName}
+                onChangeText={setNewName}
+                autoFocus
+                maxLength={40}
+              />
+              <TouchableOpacity
+                style={styles.sheetCreateBtn}
+                onPress={handleCreate}
+                activeOpacity={0.85}>
+                <Text style={styles.sheetCreateBtnText}>Create & Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.backRow} onPress={reset}>
+                <Ionicons name="arrow-back" size={15} color="#555" />
+                <Text style={styles.backText}>Back</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.cancelRow} onPress={handleClose}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Main Screen ─────────────────────────────────────────────────────────────
+
+export default function AIGenScreen({ navigation }) {
+  const { userPlaylists, createPlaylist, addSongToPlaylist, loadAndPlay, addCreatedSong, updateCreatedSong } = useUser();
+
+  // Form state
+  const [genre, setGenre] = useState('Afrobeats');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+
+  // Flow state
+  const [step, setStep] = useState('form'); // 'form' | 'generating' | 'result'
+  const [predictionId, setPredictionId] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [error, setError] = useState(null);
+  const [savedMsg, setSavedMsg] = useState('');
+  const [showSaveSheet, setShowSaveSheet] = useState(false);
+  const [coverUri, setCoverUri] = useState(null); // optional cover art for the generated song
+  const [songId, setSongId] = useState(null);     // stable id for the created song
+
+  // Generating animation
+  const [msgIdx, setMsgIdx] = useState(0);
+  const genBars = useRef(
+    Array.from({ length: NUM_GEN_BARS }, () => new Animated.Value(8))
+  ).current;
+
+  // ── Generating: cycle messages ────────────────────────────────────
+  useEffect(() => {
+    if (step !== 'generating') return;
+    setMsgIdx(0);
+    const iv = setInterval(() => setMsgIdx(i => (i + 1) % CYCLE_MESSAGES.length), 3500);
+    return () => clearInterval(iv);
+  }, [step]);
+
+  // ── Generating: animate bars ──────────────────────────────────────
+  useEffect(() => {
+    if (step !== 'generating') {
+      genBars.forEach(b => b.setValue(8));
+      return;
+    }
+
+    const animations = genBars.map((bar, i) => {
+      const { peak, trough, duration } = GEN_BAR_PARAMS[i];
+      return Animated.loop(
+        Animated.sequence([
+          Animated.timing(bar, { toValue: peak, duration, useNativeDriver: false }),
+          Animated.timing(bar, { toValue: trough, duration: duration * 0.85, useNativeDriver: false }),
+        ])
+      );
+    });
+
+    // Stagger start so bars don't all peak together
+    genBars.forEach((_, i) => {
+      setTimeout(() => animations[i].start(), i * 55);
+    });
+
+    return () => animations.forEach(a => a.stop());
+  }, [step]);
+
+  // ── Poll Replicate for status ─────────────────────────────────────
+  useEffect(() => {
+    if (step !== 'generating' || !predictionId) return;
+
+    const poll = async () => {
+      const result = await api.getSongStatus(predictionId);
+      if (!result) return;
+
+      if (result.status === 'succeeded') {
+        const id = `ai_${Date.now()}`;
+        setSongId(id);
+        setAudioUrl(result.audioUrl);
+        // Save into "created content" → shown under Upload Music
+        addCreatedSong({
+          id, title: title.trim() || 'Untitled', artist: 'AI Generated',
+          genre, emoji: '✨', audioUrl: result.audioUrl,
+        });
+        setStep('result');
+      } else if (result.status === 'failed') {
+        setError(result.error || 'Generation failed. Please try again.');
+        setStep('form');
+      }
+      // 'starting' | 'processing' — keep polling
+    };
+
+    const iv = setInterval(poll, 3000);
+    poll(); // immediate first check
+    return () => clearInterval(iv);
+  }, [step, predictionId]);
+
+  // ── Handlers ──────────────────────────────────────────────────────
+
+  const handleGenerate = async () => {
+    if (!title.trim()) {
+      Alert.alert('Title Required', 'Please enter a song title before generating.');
+      return;
+    }
+    setError(null);
+    setStep('generating');
+
+    const result = await api.generateSong({ genre, title: title.trim(), description: description.trim() });
+
+    if (!result?.predictionId) {
+      setError('Could not start generation. Make sure the backend is running and REPLICATE_API_TOKEN is set.');
+      setStep('form');
+      return;
+    }
+
+    setPredictionId(result.predictionId);
+  };
+
+  const handlePickCover = async () => {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) { Alert.alert('Permission needed', 'Please allow photo access to add a cover.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setCoverUri(uri);
+      if (songId) updateCreatedSong(songId, { imageUrl: uri }); // keep Upload Music copy in sync
+    }
+  };
+
+  const generatedSong = useMemo(() => ({
+    id: songId || `ai_${Date.now()}`,
+    title: title.trim() || 'Untitled',
+    artist: 'AI Generated',
+    genre,
+    emoji: '✨',
+    audioUrl,
+    imageUrl: coverUri || undefined,
+  }), [songId, audioUrl, title, genre, coverUri]);
+
+  const handlePlay = () => {
+    if (!audioUrl) return;
+    loadAndPlay(generatedSong, [generatedSong], 0);
+    navigation.navigate('Player', { song: generatedSong });
+  };
+
+  const handleSaveToExisting = (playlistId) => {
+    addSongToPlaylist(generatedSong, playlistId);
+    setShowSaveSheet(false);
+    const pl = userPlaylists.find(p => p.id === playlistId);
+    setSavedMsg(`Saved to "${pl?.name || 'playlist'}"`);
+  };
+
+  const handleCreateAndSave = (name) => {
+    const pl = createPlaylist(name, '✨');
+    if (!pl) { setShowSaveSheet(false); return; }
+    addSongToPlaylist(generatedSong, pl.id);
+    setShowSaveSheet(false);
+    setSavedMsg(`Saved to "${pl.name}"`);
+  };
+
+  const resetForm = () => {
+    setStep('form');
+    setTitle('');
+    setDescription('');
+    setGenre('Afrobeats');
+    setAudioUrl(null);
+    setPredictionId(null);
+    setSavedMsg('');
+    setError(null);
+    setCoverUri(null);
+    setSongId(null);
+  };
+
+  // ── Render: FORM ──────────────────────────────────────────────────
+  if (step === 'form') {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>AI Song Generator</Text>
+          <View style={{ width: 38 }} />
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formScroll}>
+          {error ? (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle-outline" size={16} color="#888" />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          {/* Genre selector */}
+          <Text style={styles.fieldLabel}>Genre</Text>
+          <View style={styles.genreGrid}>
+            {GENRES.map(g => (
+              <GenreChip
+                key={g}
+                genre={g}
+                selected={genre === g}
+                onPress={() => setGenre(g)}
+              />
+            ))}
+          </View>
+
+          {/* Title */}
+          <Text style={styles.fieldLabel}>Song Title</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="e.g. Midnight in Lagos"
+            placeholderTextColor="#333"
+            value={title}
+            onChangeText={setTitle}
+            maxLength={60}
+            autoCorrect={false}
+          />
+
+          {/* Description */}
+          <Text style={styles.fieldLabel}>Describe the song</Text>
+          <TextInput
+            style={[styles.textInput, styles.textArea]}
+            placeholder={
+              'Describe what the song is about — the mood, instruments, story, and feeling.\n\ne.g. "An upbeat Afrobeats track about celebrating with friends at night, with talking drum and vibrant rhythm section."'
+            }
+            placeholderTextColor="#333"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            numberOfLines={5}
+            textAlignVertical="top"
+            maxLength={300}
+          />
+          <Text style={styles.charCount}>{description.length}/300</Text>
+
+          <Text style={styles.tipText}>
+            The more detail you give, the better the result. Include mood, instruments, tempo, and story.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.generateBtn, !title.trim() && styles.generateBtnDisabled]}
+            onPress={handleGenerate}
+            activeOpacity={0.85}
+            disabled={!title.trim()}>
+            <Ionicons name="sparkles" size={18} color={title.trim() ? '#000' : '#444'} />
+            <Text style={[styles.generateBtnText, !title.trim() && styles.generateBtnTextDisabled]}>
+              Generate Song
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.footNote}>Generation takes 30–60 seconds · Powered by MusicGen</Text>
+          <View style={{ height: 80 }} />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ── Render: GENERATING ────────────────────────────────────────────
+  if (step === 'generating') {
+    return (
+      <View style={[styles.container, styles.centeredContainer]}>
+        {/* Animated waveform */}
+        <View style={styles.genWaveRow}>
+          {genBars.map((bar, i) => (
+            <View key={i} style={styles.genBarWrap}>
+              <Animated.View style={[styles.genBar, { height: bar }]} />
+            </View>
+          ))}
+        </View>
+
+        <Text style={styles.genTitle}>Creating your {genre} song</Text>
+        <Text style={styles.genTitle2}>"{title}"</Text>
+        <Text style={styles.genMsg}>{CYCLE_MESSAGES[msgIdx]}</Text>
+        <Text style={styles.genEta}>This usually takes 30–60 seconds</Text>
+
+        <TouchableOpacity
+          style={styles.cancelGenBtn}
+          onPress={resetForm}
+          activeOpacity={0.75}>
+          <Text style={styles.cancelGenText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ── Render: RESULT ────────────────────────────────────────────────
+  return (
+    <View style={[styles.container, styles.centeredContainer]}>
+      <View style={styles.resultCard}>
+        <TouchableOpacity style={styles.resultArtwork} onPress={handlePickCover} activeOpacity={0.8}>
+          {coverUri ? (
+            <>
+              <Image source={{ uri: coverUri }} style={styles.resultArtworkImg} />
+              <View style={styles.coverEditBadge}>
+                <Ionicons name="camera" size={13} color="#fff" />
+              </View>
+            </>
+          ) : (
+            <Text style={styles.resultEmoji}>✨</Text>
+          )}
+        </TouchableOpacity>
+        <Text style={styles.resultTitle}>{title}</Text>
+        <Text style={styles.resultMeta}>AI Generated · {genre} · 30s</Text>
+
+        {savedMsg ? (
+          <View style={styles.savedBadge}>
+            <Ionicons name="checkmark-circle" size={14} color="#888" />
+            <Text style={styles.savedText}>{savedMsg}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <TouchableOpacity style={styles.playBtn} onPress={handlePlay} activeOpacity={0.85}>
+        <Ionicons name="play" size={20} color="#000" />
+        <Text style={styles.playBtnText}>Play Song</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.coverBtn} onPress={handlePickCover} activeOpacity={0.85}>
+        <Ionicons name={coverUri ? 'image' : 'image-outline'} size={18} color="#fff" />
+        <Text style={styles.coverBtnText}>{coverUri ? 'Change Cover Art' : 'Upload Cover Art'}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.saveBtn}
+        onPress={() => setShowSaveSheet(true)}
+        activeOpacity={0.85}>
+        <Ionicons name="bookmark-outline" size={18} color="#fff" />
+        <Text style={styles.saveBtnText}>Save to Playlist</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.againBtn} onPress={resetForm} activeOpacity={0.75}>
+        <Ionicons name="refresh" size={16} color="#555" />
+        <Text style={styles.againText}>Generate Another</Text>
+      </TouchableOpacity>
+
+      <SaveSheet
+        visible={showSaveSheet}
+        playlists={userPlaylists}
+        onSaveToExisting={handleSaveToExisting}
+        onCreateNew={handleCreateAndSave}
+        onClose={() => setShowSaveSheet(false)}
+      />
+    </View>
+  );
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#000' },
+  centeredContainer: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 18,
+  },
+  backBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: '#111', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: '#1A1A1A',
+  },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: '#fff' },
+
+  // Form
+  formScroll: { paddingHorizontal: 20 },
+  fieldLabel: {
+    fontSize: 11, fontWeight: '700', color: '#444',
+    textTransform: 'uppercase', letterSpacing: 1.3, marginBottom: 12, marginTop: 22,
+  },
+  genreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  genreChip: {
+    paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 20, backgroundColor: '#111',
+    borderWidth: 1, borderColor: '#1E1E1E',
+  },
+  genreChipActive: { backgroundColor: '#fff', borderColor: '#fff' },
+  genreChipText: { color: '#555', fontSize: 13, fontWeight: '600' },
+  genreChipTextActive: { color: '#000' },
+
+  textInput: {
+    backgroundColor: '#111', color: '#fff',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderRadius: 12, fontSize: 15,
+    borderWidth: 1, borderColor: '#1E1E1E',
+    marginBottom: 4,
+  },
+  textArea: { height: 130, paddingTop: 14 },
+  charCount: { color: '#2A2A2A', fontSize: 11, textAlign: 'right', marginBottom: 8 },
+
+  tipText: {
+    color: '#2A2A2A', fontSize: 12, lineHeight: 18,
+    marginTop: 6, marginBottom: 28,
+  },
+
+  generateBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#fff', paddingVertical: 16,
+    borderRadius: 14, marginBottom: 14,
+  },
+  generateBtnDisabled: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1E1E1E' },
+  generateBtnText: { color: '#000', fontSize: 16, fontWeight: '800' },
+  generateBtnTextDisabled: { color: '#333' },
+  footNote: { color: '#222', fontSize: 11, textAlign: 'center' },
+
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: '#111', borderRadius: 10,
+    padding: 14, marginBottom: 8, marginTop: 8,
+    borderWidth: 1, borderColor: '#1E1E1E',
+  },
+  errorText: { color: '#666', fontSize: 13, flex: 1, lineHeight: 18 },
+
+  // Generating
+  genWaveRow: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    gap: 4, height: 90, marginBottom: 40,
+  },
+  genBarWrap: { width: 7, height: 90, justifyContent: 'flex-end', alignItems: 'center' },
+  genBar: { width: 5, borderRadius: 3, backgroundColor: '#fff' },
+
+  genTitle: { fontSize: 18, fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: 4 },
+  genTitle2: { fontSize: 14, color: '#555', textAlign: 'center', marginBottom: 24, fontStyle: 'italic' },
+  genMsg: { fontSize: 14, color: '#444', textAlign: 'center', marginBottom: 10 },
+  genEta: { fontSize: 12, color: '#2A2A2A', textAlign: 'center', marginBottom: 40 },
+  cancelGenBtn: {
+    paddingHorizontal: 24, paddingVertical: 10,
+    borderRadius: 20, borderWidth: 1, borderColor: '#1E1E1E',
+  },
+  cancelGenText: { color: '#444', fontSize: 14 },
+
+  // Result
+  resultCard: {
+    width: '100%', backgroundColor: '#111',
+    borderRadius: 20, padding: 28,
+    alignItems: 'center', marginBottom: 28,
+    borderWidth: 1, borderColor: '#1A1A1A',
+  },
+  resultArtwork: {
+    width: 110, height: 110, borderRadius: 22,
+    backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center',
+    marginBottom: 18, borderWidth: 1, borderColor: '#222', overflow: 'hidden',
+  },
+  resultArtworkImg: { width: '100%', height: '100%' },
+  coverEditBadge: {
+    position: 'absolute', bottom: 6, right: 6,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
+  },
+  resultEmoji: { fontSize: 52 },
+  resultTitle: { fontSize: 20, fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: 6 },
+  resultMeta: { fontSize: 13, color: '#444', marginBottom: 14 },
+  savedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#1A1A1A', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 12,
+  },
+  savedText: { color: '#666', fontSize: 12, fontWeight: '600' },
+
+  playBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#fff', paddingVertical: 15, borderRadius: 14,
+    width: '100%', marginBottom: 12,
+  },
+  playBtnText: { color: '#000', fontSize: 16, fontWeight: '800' },
+
+  coverBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#111', paddingVertical: 14, borderRadius: 14,
+    width: '100%', marginBottom: 12,
+    borderWidth: 1, borderColor: '#1E1E1E',
+  },
+  coverBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  saveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#111', paddingVertical: 14, borderRadius: 14,
+    width: '100%', marginBottom: 16,
+    borderWidth: 1, borderColor: '#1E1E1E',
+  },
+  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  againBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 10,
+  },
+  againText: { color: '#444', fontSize: 14 },
+
+  // Save sheet
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
+  saveSheet: {
+    backgroundColor: '#111',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 44,
+    borderTopWidth: 1, borderColor: '#1E1E1E',
+  },
+  sheetHandle: {
+    width: 36, height: 3, backgroundColor: '#222',
+    borderRadius: 2, alignSelf: 'center', marginBottom: 20,
+  },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#fff', marginBottom: 20, textAlign: 'center' },
+  sheetLabel: { fontSize: 11, fontWeight: '700', color: '#444', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 },
+  sheetInput: {
+    backgroundColor: '#1A1A1A', color: '#fff',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderRadius: 12, fontSize: 15,
+    borderWidth: 1, borderColor: '#2A2A2A', marginBottom: 14,
+  },
+  sheetCreateBtn: {
+    backgroundColor: '#fff', paddingVertical: 14,
+    borderRadius: 12, alignItems: 'center', marginBottom: 10,
+  },
+  sheetCreateBtnText: { color: '#000', fontSize: 15, fontWeight: '800' },
+
+  createNewRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#1A1A1A', borderRadius: 12,
+    padding: 14, marginBottom: 16,
+    borderWidth: 1, borderColor: '#222',
+  },
+  createNewIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center',
+  },
+  createNewText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '600' },
+
+  orLabel: { fontSize: 11, color: '#2A2A2A', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
+
+  playlistScroll: { maxHeight: 220, marginBottom: 4 },
+  playlistPickRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#1A1A1A',
+  },
+  playlistPickEmoji: { fontSize: 22 },
+  playlistPickName: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '600' },
+  playlistPickCount: { color: '#333', fontSize: 12 },
+
+  createForm: { marginBottom: 8 },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, justifyContent: 'center' },
+  backText: { color: '#555', fontSize: 14 },
+  cancelRow: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  cancelText: { color: '#333', fontSize: 14 },
+});
