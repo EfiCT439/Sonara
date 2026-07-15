@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "expo-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web"],
+      "port": 8081,
+      "autoPort": true
+    },
+    {
+      "name": "sonara-website",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 5000,
+      "autoPort": true,
+      "cwd": "C:\\Users\\enowt\\Desktop\\project\\SonaraBackend"
+    }
+  ]
+}
