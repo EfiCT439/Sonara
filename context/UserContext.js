@@ -1,7 +1,21 @@
 import { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { Alert } from 'react-native';
 import { Audio } from 'expo-av';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../firebaseConfig';
 import api from '../services/api';
+import { resolvePlayableUrl } from '../services/audius';
+import { themeFor } from '../services/theme';
+
+// The default playlist set for a signed-out / brand-new user.
+const EMPTY_PLAYLISTS = [
+  { id: 'liked_songs', name: 'Liked Songs', emoji: '❤️', songs: [], isLikedSongs: true },
+];
+
+// Firestore rejects `undefined`; normalized songs carry undefined imageUrl/videoUrl/
+// lyrics. JSON round-trip drops those keys and leaves a plain, storable object.
+const forFirestore = (obj) => JSON.parse(JSON.stringify(obj));
 
 const UserContext = createContext();
 
@@ -17,9 +31,16 @@ export function UserProvider({ children }) {
   const [createdSongs, setCreatedSongs] = useState([]); // AI-generated / uploaded songs → "Upload Music"
   const [downloadedSongs, setDownloadedSongs] = useState([]); // downloaded audio/video → Library "Downloads"
   const [likedSongs, setLikedSongs] = useState([]);
-  const [userPlaylists, setUserPlaylists] = useState([
-    { id: 'liked_songs', name: 'Liked Songs', emoji: '❤️', songs: [], isLikedSongs: true },
-  ]);
+  const [userPlaylists, setUserPlaylists] = useState(EMPTY_PLAYLISTS);
+
+  // ── Account persistence (Firestore) ──
+  // The signed-in user's library (playlists, likes, follows, AI songs, downloads)
+  // is mirrored to users/{uid} so it survives logout and app updates. currentUid
+  // gates saving; hydratedRef ensures we never overwrite stored data with the empty
+  // defaults before the load has finished.
+  const [currentUid, setCurrentUid] = useState(null);
+  const hydratedRef = useRef(false);
+  const saveTimerRef = useRef(null);
 
   // ── Global player state ──
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -34,6 +55,15 @@ export function UserProvider({ children }) {
   const sleepTimerTimeoutRef = useRef(null);
 
   const soundRef = useRef(null);
+  // Which song soundRef currently holds, so re-tapping it can restart in place
+  // instead of paying for a fresh stream.
+  const loadedSongIdRef = useRef(null);
+  // Which song a load is CURRENTLY streaming in. Tapping a row and then landing on
+  // PlayerScreen fires loadAndPlay twice for the same song (the screen's mount
+  // effect can't yet see the currentTrack the row just set). Without this guard the
+  // second call tears down the stream the first one started and re-streams from
+  // scratch — doubling startup — and clobbers the real queue with a one-song queue.
+  const loadingSongIdRef = useRef(null);
   // The upcoming track, downloaded in the background while the current one plays,
   // so auto-advance (and the next button) start with no wait.
   const nextSoundRef = useRef(null); // { sound, songId }
@@ -51,12 +81,20 @@ export function UserProvider({ children }) {
   const [notifications, setNotifications] = useState([
     { id: '1', title: 'Welcome to Sonara! 🎵', message: 'Start listening to your favourite music!', time: 'Just now', read: false },
     { id: '2', title: 'New Release!', message: 'Burna Boy just dropped a new song!', time: '2 hours ago', read: false },
-    { id: '3', title: 'Upgrade to Premium 💎', message: 'Get unlimited skips and more for just $1/month!', time: '1 day ago', read: true },
+    { id: '3', title: 'Upgrade to Premium', message: 'Get unlimited skips and more for just $1/month!', time: '1 day ago', read: true },
   ]);
   const [listeningHabits, setListeningHabits] = useState({ genres: {}, artists: {}, songs: {} });
 
   // Privacy: when on, played songs are NOT recorded to history or habits.
   const [privateSession, setPrivateSession] = useState(false);
+
+  // ── Appearance ──
+  // 'dark' | 'light'. Saved with the rest of the account data so the choice
+  // survives logout and reinstall, same as the library.
+  const [themeKey, setThemeKey] = useState('dark');
+  const colors = themeFor(themeKey);
+  const isDark = themeKey === 'dark';
+  const toggleTheme = () => setThemeKey(k => (k === 'dark' ? 'light' : 'dark'));
 
   // Audio mode — set once for the whole app
   useEffect(() => {
@@ -75,6 +113,68 @@ export function UserProvider({ children }) {
       if (sleepTimerTimeoutRef.current) clearTimeout(sleepTimerTimeoutRef.current);
     };
   }, []);
+
+  // ── Load the user's library on sign-in; clear it on sign-out ──────────
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        // Signed out: stop saving first, then wipe this user's data from memory so
+        // the next account can't see it. hydratedRef=false blocks the save effect.
+        hydratedRef.current = false;
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        setCurrentUid(null);
+        setUserPlaylists(EMPTY_PLAYLISTS);
+        setLikedSongs([]);
+        setFollowedArtists([]);
+        setCreatedSongs([]);
+        setDownloadedSongs([]);
+        setFavouriteArtists([]);
+        setProfileImage(null);
+        setThemeKey('dark');
+        return;
+      }
+      // Signed in: pull the stored library before allowing any save.
+      hydratedRef.current = false;
+      setCurrentUid(user.uid);
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (snap.exists()) {
+          const d = snap.data();
+          if (d.favouriteArtists) setFavouriteArtists(d.favouriteArtists);
+          if (d.profileImage) setProfileImage(d.profileImage);
+          if (Array.isArray(d.userPlaylists) && d.userPlaylists.length) setUserPlaylists(d.userPlaylists);
+          if (Array.isArray(d.likedSongs)) setLikedSongs(d.likedSongs);
+          if (Array.isArray(d.followedArtists)) setFollowedArtists(d.followedArtists);
+          if (Array.isArray(d.createdSongs)) setCreatedSongs(d.createdSongs);
+          if (Array.isArray(d.downloadedSongs)) setDownloadedSongs(d.downloadedSongs);
+          if (d.themeKey === 'light' || d.themeKey === 'dark') setThemeKey(d.themeKey);
+        }
+        // Only enable saving once we've actually read the stored copy. If the read
+        // failed (offline), we deliberately leave saving OFF for this session rather
+        // than risk overwriting the user's real data with empty startup defaults.
+        hydratedRef.current = true;
+      } catch (_) {
+        hydratedRef.current = false;
+      }
+    });
+    return unsub;
+  }, []);
+
+  // ── Auto-save the library to the account whenever it changes (debounced) ──
+  // Skips until a user is present AND their data has been hydrated, so the empty
+  // startup defaults can never overwrite what's stored.
+  useEffect(() => {
+    if (!currentUid || !hydratedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      setDoc(
+        doc(db, 'users', currentUid),
+        forFirestore({ userPlaylists, likedSongs, followedArtists, createdSongs, downloadedSongs, themeKey }),
+        { merge: true },
+      ).catch(() => {});
+    }, 800);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [currentUid, userPlaylists, likedSongs, followedArtists, createdSongs, downloadedSongs, themeKey]);
 
   // ── GLOBAL AUDIO CONTROLS ──────────────────────────────────
 
@@ -99,8 +199,10 @@ export function UserProvider({ children }) {
     if (nextSoundRef.current?.songId === nextSong.id) return; // already warm
     disposePreload();
     try {
+      const uri = await resolvePlayableUrl(nextSong);
+      if (currentToken !== loadTokenRef.current) return; // superseded while resolving
       const { sound } = await Audio.Sound.createAsync(
-        { uri: nextSong.audioUrl },
+        { uri },
         { shouldPlay: false, volume: 1.0 },
         null,
         true,
@@ -115,14 +217,51 @@ export function UserProvider({ children }) {
   };
 
   const loadAndPlay = async (song, queue = null, queueIndex = 0) => {
+    // Re-tapping the track that is already loaded (a Library row, the queue sheet,
+    // the same song twice) restarts it in place. Tearing the sound down and
+    // re-streaming would spend a network round trip to play audio we already hold.
+    if (soundRef.current && loadedSongIdRef.current === song.id) {
+      if (queue && queue.length > 0) {
+        queueRef.current = queue;
+        queueIndexRef.current = queueIndex;
+        setCurrentQueue(queue);
+      }
+      setIsPlayingGlobal(true);
+      isPlayingRef.current = true;
+      lastToggleAtRef.current = Date.now();
+      try {
+        await soundRef.current.setPositionAsync(0);
+        await soundRef.current.playAsync();
+        setMiniPlayerPosition(0);
+        trackSongPlay(song);
+        return;
+      } catch (_) {
+        // The sound is unusable — fall through and load it properly.
+      }
+    }
+
+    // A load for this exact song is already streaming in. This is the duplicate
+    // trigger from the Library-row → PlayerScreen hand-off; ignore it rather than
+    // restart the stream and lose the queue. A new queue still updates the UI.
+    if (loadingSongIdRef.current === song.id) {
+      if (queue && queue.length > 1) {
+        queueRef.current = queue;
+        queueIndexRef.current = queueIndex;
+        setCurrentQueue(queue);
+      }
+      return;
+    }
+
     // Claim this load. Any load already in flight is now stale and will bail out.
     const token = ++loadTokenRef.current;
+    loadingSongIdRef.current = song.id;
 
     // Detach the old sound's listener FIRST and drop the ref, so it can no longer
     // push positions into the UI (this is what caused the progress bar to jump).
     // Tear it down fire-and-forget so the new song never waits on the old one.
     const prev = soundRef.current;
     soundRef.current = null;
+    loadedSongIdRef.current = null;
     if (prev) {
       try { prev.setOnPlaybackStatusUpdate(null); } catch (_) {}
       prev.stopAsync().catch(() => {}).then(() => prev.unloadAsync().catch(() => {}));
@@ -154,8 +293,14 @@ export function UserProvider({ children }) {
         needsPlay = true;           // it was preloaded paused
       } else {
         disposePreload();           // preloaded a different track — drop it
+        // Resolve a real, directly-playable URL for ANY song: the placeholder
+        // (soundhelix) catalog is matched to a real Audius track, Audius endpoints
+        // resolve to their direct mp3, and real urls pass through. This is what
+        // makes tapping a local song play real audio instead of the sample.
+        const uri = await resolvePlayableUrl(song);
+        if (token !== loadTokenRef.current) return; // superseded while resolving
         const created = await Audio.Sound.createAsync(
-          { uri: song.audioUrl },
+          { uri },
           { shouldPlay: true, volume: 1.0, progressUpdateIntervalMillis: 500 },
           null,   // status listener attached below, once we know this load is current
           false,  // downloadFirst: stream it — don't wait for the whole file to download
@@ -165,14 +310,26 @@ export function UserProvider({ children }) {
 
       // Superseded while loading — kill it so two songs can never overlap.
       if (token !== loadTokenRef.current) {
+        // Only clear if a newer load hasn't already claimed the slot for its song.
+        if (loadingSongIdRef.current === song.id) loadingSongIdRef.current = null;
         sound.stopAsync().catch(() => {}).then(() => sound.unloadAsync().catch(() => {}));
         return;
       }
+
+      let preloadStarted = false;
 
       sound.setOnPlaybackStatusUpdate((status) => {
         // Ignore anything from a sound that is no longer the current one.
         if (token !== loadTokenRef.current) return;
         if (!status.isLoaded) return;
+
+        // Warm the next track only once this one is actually playing. preloadNext
+        // downloads a whole MP3, and firing it while the tapped song is still
+        // buffering makes the user wait on a track they haven't asked for yet.
+        if (!preloadStarted && status.isPlaying) {
+          preloadStarted = true;
+          preloadNext(token);
+        }
         // Don't let a status update that was already in flight override the
         // play/pause the user just tapped.
         if (Date.now() - lastToggleAtRef.current > 400) {
@@ -196,10 +353,14 @@ export function UserProvider({ children }) {
       });
 
       soundRef.current = sound;
+      loadedSongIdRef.current = song.id;
+      if (loadingSongIdRef.current === song.id) loadingSongIdRef.current = null;
       if (needsPlay) sound.playAsync().catch(() => {}); // preloaded → starts instantly
       trackSongPlay(song);
-      preloadNext(token); // warm up the following track for a gapless hand-off
+      // preloadNext is kicked from the status listener once this track is playing,
+      // so the background download can't compete with the stream being waited on.
     } catch (error) {
+      if (loadingSongIdRef.current === song.id) loadingSongIdRef.current = null;
       if (token === loadTokenRef.current) {
         setIsPlayingGlobal(false);
         isPlayingRef.current = false;
@@ -430,6 +591,12 @@ export function UserProvider({ children }) {
     setUserPlaylists(prev => prev.filter(p => p.id !== id || p.isLikedSongs));
   };
 
+  const removeSongFromPlaylist = (songId, playlistId) => {
+    setUserPlaylists(prev => prev.map(pl =>
+      pl.id === playlistId ? { ...pl, songs: pl.songs.filter(s => s.id !== songId) } : pl
+    ));
+  };
+
   const updatePlaylist = (id, name, emoji) => {
     setUserPlaylists(prev => prev.map(pl =>
       pl.id === id && !pl.isLikedSongs ? { ...pl, name, emoji } : pl
@@ -475,13 +642,14 @@ export function UserProvider({ children }) {
       recentlyPlayed, setRecentlyPlayed,
       searchHistory, setSearchHistory, addToSearchHistory,
       likedSongs, toggleLikeSong, isSongLiked,
-      userPlaylists, setUserPlaylists, addSongToPlaylist, createPlaylist, createGeneratedPlaylist, deletePlaylist, updatePlaylist,
+      userPlaylists, setUserPlaylists, addSongToPlaylist, removeSongFromPlaylist, createPlaylist, createGeneratedPlaylist, deletePlaylist, updatePlaylist,
       createdSongs, addCreatedSong, updateCreatedSong,
       downloadedSongs, downloadSong, isDownloaded,
       canCreatePlaylist, canAddSongToPlaylist, customPlaylistCount, FREE_SONGS_PER_PLAYLIST, FREE_PLAYLIST_LIMIT,
       notifications, setNotifications, markAllNotificationsRead, unreadCount,
       listeningHabits, trackSongPlay, getTopGenres, getTopArtists,
       privateSession, setPrivateSession, clearListeningHistory,
+      themeKey, setThemeKey, toggleTheme, colors, isDark,
       syncPremiumFromBackend,
       // Global player
       currentTrack, setCurrentTrack,

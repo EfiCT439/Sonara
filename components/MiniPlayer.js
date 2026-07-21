@@ -1,20 +1,10 @@
 import { useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Animated, Alert,
+  View, Text, TouchableOpacity, StyleSheet, Animated, Alert, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../context/UserContext';
-
-const GENRE_COLORS = {
-  Afrobeats: '#FF6B35',
-  'Hip Hop': '#9B59B6',
-  Pop: '#E91E63',
-  'R&B': '#3498DB',
-  Soul: '#E67E22',
-  Gospel: '#2ECC71',
-  Amapiano: '#1ABC9C',
-  Rap: '#E74C3C',
-};
+import { useArtwork } from '../services/artwork';
 
 export default function MiniPlayer({ onOpenPlayer, onUpgrade }) {
   const {
@@ -26,7 +16,11 @@ export default function MiniPlayer({ onOpenPlayer, onUpgrade }) {
     playNextInQueue,
     miniPlayerPosition,
     miniPlayerDuration,
+    colors: c,
   } = useUser();
+  const styles = makeStyles(c);
+  // Called before the early `return null` below so hook order stays stable.
+  const art = useArtwork(currentTrack);
 
   const handlePrevious = () => {
     if (isPremium) {
@@ -44,10 +38,6 @@ export default function MiniPlayer({ onOpenPlayer, onUpgrade }) {
   };
 
   const slideAnim = useRef(new Animated.Value(120)).current;
-
-  const genreColor = currentTrack
-    ? (GENRE_COLORS[currentTrack.genre] || '#1DB954')
-    : '#1DB954';
 
   const progressPercent =
     miniPlayerDuration > 0
@@ -79,14 +69,14 @@ export default function MiniPlayer({ onOpenPlayer, onUpgrade }) {
       <TouchableOpacity
         activeOpacity={0.9}
         onPress={onOpenPlayer}
-        style={[styles.container, { borderColor: genreColor + '60' }]}>
+        style={styles.container}>
 
         {/* PROGRESS BAR — top edge, updates in real time */}
         <View style={styles.progressBg}>
           <View
             style={[
               styles.progressFill,
-              { width: `${progressPercent}%`, backgroundColor: genreColor },
+              { width: `${progressPercent}%`, backgroundColor: c.accent },
             ]}
           />
         </View>
@@ -94,17 +84,19 @@ export default function MiniPlayer({ onOpenPlayer, onUpgrade }) {
         {/* Main content */}
         <View style={styles.row}>
           {/* Album art */}
-          <View style={[styles.albumArt, { backgroundColor: genreColor + '30' }]}>
-            <Text style={styles.albumEmoji}>{currentTrack.emoji || '🎵'}</Text>
+          <View style={styles.albumArt}>
+            {art
+              ? <Image source={{ uri: art }} style={styles.albumArtImg} />
+              : <Text style={styles.albumEmoji}>{currentTrack.emoji || '🎵'}</Text>}
             {isPlayingGlobal && (
-              <View style={[styles.playingDot, { backgroundColor: genreColor }]} />
+              <View style={styles.playingDot} />
             )}
           </View>
 
           {/* Info */}
           <View style={styles.info}>
             <Text style={styles.title} numberOfLines={1}>{currentTrack.title}</Text>
-            <Text style={[styles.artist, { color: genreColor }]} numberOfLines={1}>
+            <Text style={styles.artist} numberOfLines={1}>
               {currentTrack.artist}
             </Text>
           </View>
@@ -114,21 +106,21 @@ export default function MiniPlayer({ onOpenPlayer, onUpgrade }) {
             style={[styles.prevBtn, !isPremium && styles.lockedBtn]}
             onPress={handlePrevious}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="play-skip-back" size={18} color={isPremium ? '#ccc' : '#555'} />
+            <Ionicons name="play-skip-back" size={18} color={isPremium ? c.textDim : c.textFaint} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.playBtn, { backgroundColor: genreColor }]}
+            style={styles.playBtn}
             onPress={playPause}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={20} color="#fff" />
+            <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={20} color={c.accentText} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.nextBtn}
             onPress={() => playNextInQueue(false)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="play-skip-forward" size={20} color="#999" />
+            <Ionicons name="play-skip-forward" size={20} color={c.textDim} />
           </TouchableOpacity>
         </View>
 
@@ -146,7 +138,7 @@ export default function MiniPlayer({ onOpenPlayer, onUpgrade }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c) => StyleSheet.create({
   wrapper: {
     position: 'absolute',
     bottom: 70,
@@ -156,11 +148,13 @@ const styles = StyleSheet.create({
     elevation: 99,
   },
   container: {
-    backgroundColor: '#161616',
-    borderRadius: 16,
+    backgroundColor: c.surface,
+    borderRadius: 14,
     borderWidth: 1,
+    borderColor: c.border,
     overflow: 'hidden',
-    shadowColor: '#000',
+    // Plain drop shadow so the bar reads as floating — not a coloured glow.
+    shadowColor: c.bg,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.5,
     shadowRadius: 12,
@@ -168,8 +162,8 @@ const styles = StyleSheet.create({
   },
   progressBg: {
     width: '100%',
-    height: 3,
-    backgroundColor: '#2a2a2a',
+    height: 2,
+    backgroundColor: c.elevated,
   },
   progressFill: {
     height: '100%',
@@ -185,12 +179,16 @@ const styles = StyleSheet.create({
   albumArt: {
     width: 46,
     height: 46,
-    borderRadius: 12,
+    borderRadius: 10,
+    backgroundColor: c.elevated,
+    borderWidth: 1,
+    borderColor: c.border,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   albumEmoji: { fontSize: 24 },
+  albumArtImg: { ...StyleSheet.absoluteFillObject },
   playingDot: {
     position: 'absolute',
     bottom: -3,
@@ -198,16 +196,18 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+    backgroundColor: c.accent,
     borderWidth: 2,
-    borderColor: '#161616',
+    borderColor: c.border,
   },
   info: { flex: 1, gap: 3 },
-  title: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  artist: { fontSize: 11, fontWeight: '600' },
+  title: { color: c.text, fontSize: 13, fontWeight: '700' },
+  artist: { color: c.textDim, fontSize: 11, fontWeight: '600' },
   playBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
+    backgroundColor: c.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },

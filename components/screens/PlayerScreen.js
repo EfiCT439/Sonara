@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity, Alert, Modal,
-  ScrollView, Animated, Dimensions, Linking, StatusBar,
-  TextInput, Clipboard, Image, TouchableWithoutFeedback, Switch,
+  ScrollView, Animated, Dimensions, StatusBar,
+  TextInput, Clipboard, Image, TouchableWithoutFeedback, Switch, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -10,6 +10,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { Video, ResizeMode } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useUser } from '../../context/UserContext';
+import { useArtwork } from '../../services/artwork';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const INLINE_VIDEO_H = Math.round(SCREEN_WIDTH * 9 / 16); // 16:9, full-width like YouTube
@@ -57,6 +58,55 @@ const ARTIST_INFO = {
 
 const VIDEO_QUALITIES = ['Auto', '360p', '480p', '720p', '1080p'];
 
+// Lyrics arrive as a plain string — nothing in the app carries per-line timestamps
+// (no LRC data, no lyrics provider), so there is nothing to sync against precisely.
+// The full-screen view therefore paces the lines evenly across the track: each
+// singable line gets an equal slice of the duration. It follows the song's progress
+// honestly, but it is an approximation and will not land exactly on the vocal.
+// Swap this for real timestamps the moment the catalog carries them.
+const SECTION_RE = /^\s*(\[.*\]|(intro|verse|pre-chorus|chorus|hook|bridge|outro|refrain)\b.*:?)\s*$/i;
+
+const parseLyrics = (raw) => {
+  if (!raw || !raw.trim()) return [];
+  return raw
+    .split('\n')
+    .map(t => t.trim())
+    .filter(t => t.length > 0)
+    .map(text => ({ text, isSection: SECTION_RE.test(text) || /:$/.test(text) }));
+};
+
+// Index of the line that should be lit up right now, counted over singable lines
+// only so section headers don't eat a slot of the song's time.
+const activeLyricLine = (lines, position, duration) => {
+  const singable = lines.filter(l => !l.isSection);
+  if (!singable.length || !duration) return -1;
+  const progress = Math.min(Math.max(position / duration, 0), 0.999);
+  const nth = Math.floor(progress * singable.length);
+  return lines.indexOf(singable[nth]);
+};
+
+const LYRIC_LINE_H = 46;
+
+// YouTube-style double-tap seek. A second tap on the same side within this window
+// counts as a double tap; while the indicator is still on screen any further tap on
+// that side keeps stacking (10s, 20s, 30s…). A lone tap just toggles the controls,
+// but only after the window closes — otherwise the controls flash before the second
+// tap of a double tap lands.
+const DOUBLE_TAP_MS = 300;
+const SEEK_HINT_LINGER_MS = 850;
+const FORWARD_STEP_MS = 10000;
+const BACK_STEP_MS = 5000;
+
+const SLEEP_OPTIONS = [
+  { label: '15 minutes', value: 15 },
+  { label: '30 minutes', value: 30 },
+  { label: '45 minutes', value: 45 },
+  { label: '1 hour', value: 60 },
+  { label: '2 hours', value: 120 },
+  { label: '3 hours', value: 180 },
+  { label: 'End of song', value: 'end' },
+];
+
 const GENRE_COLORS = {
   Afrobeats: '#FF6B35',
   'Hip Hop': '#9B59B6',
@@ -70,12 +120,6 @@ const GENRE_COLORS = {
 
 const EMOJIS = ['🎵', '🎶', '🎸', '🎹', '🎺', '🎻', '🎤', '🎧', '❤️', '🔥', '⚡', '🌙'];
 
-const SHARE_APPS = [
-  { name: 'WhatsApp', icon: 'logo-whatsapp', color: '#25D366', key: 'whatsapp' },
-  { name: 'Instagram', icon: 'logo-instagram', color: '#E1306C', key: 'instagram' },
-  { name: 'Twitter', icon: 'logo-twitter', color: '#1DA1F2', key: 'twitter' },
-  { name: 'Facebook', icon: 'logo-facebook', color: '#1877F2', key: 'facebook' },
-];
 
 export default function PlayerScreen({ navigation, route }) {
   const {
@@ -89,8 +133,9 @@ export default function PlayerScreen({ navigation, route }) {
     loadAndPlay, playPause, playNextInQueue, playPreviousInQueue, seekTo,
     setIsPlayerOpen,
     sleepTimerLabel, setSleepTimer, cancelSleepTimer,
-    downloadSong, isDownloaded,
+    downloadSong, isDownloaded, colors: c,
   } = useUser();
+  const styles = makeStyles(c);
 
   const [isConnected, setIsConnected] = useState(true);
   const [songsPlayed, setSongsPlayed] = useState(0);
@@ -101,11 +146,21 @@ export default function PlayerScreen({ navigation, route }) {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [videoQuality, setVideoQuality] = useState('Auto');
   const [showLyrics, setShowLyrics] = useState(false);
+  const [showLyricsFull, setShowLyricsFull] = useState(false);
+  const lyricsScrollRef = useRef(null);
+
+  // Double-tap seek: { side: 'back'|'forward', total } while the indicator shows.
+  const [seekHint, setSeekHint] = useState(null);
+  const seekHintRef = useRef(null);   // mirror, so a tap can read it without a re-render
+  const lastTapRef = useRef({ time: 0, side: null });
+  const hintTimerRef = useRef(null);
+  const singleTapTimerRef = useRef(null);
+  // Measured rather than derived from Dimensions: the same handler serves the
+  // portrait inline video and the landscape fullscreen one, whose widths differ.
+  const videoAreaWRef = useRef(0);
   const [showSleepTimer, setShowSleepTimer] = useState(false);
   const [showShare, setShowShare] = useState(false);
-  const [showShareOptions, setShowShareOptions] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
-  const [selectedShareApp, setSelectedShareApp] = useState(null);
   const [showQueue, setShowQueue] = useState(false);
   const [showAboutArtist, setShowAboutArtist] = useState(false);
   const [showRepeatOptions, setShowRepeatOptions] = useState(false);
@@ -124,6 +179,7 @@ export default function PlayerScreen({ navigation, route }) {
   const [showVideoControls, setShowVideoControls] = useState(true);
   const [showVideoSettings, setShowVideoSettings] = useState(false);
   const [showFsSettings, setShowFsSettings] = useState(false); // fullscreen settings overlay (no Modal, safe in landscape)
+  const [fsPanel, setFsPanel] = useState('main'); // 'main' | 'sleep' | 'quality' — sub-view inside the fullscreen overlay
   const [subtitlesOn, setSubtitlesOn] = useState(false);
   const [videoStatus, setVideoStatus] = useState({});
   const videoRef = useRef(null);
@@ -135,6 +191,7 @@ export default function PlayerScreen({ navigation, route }) {
   const [seekPosition, setSeekPosition] = useState(0);
 
   const displaySong = currentTrack || route?.params?.song || SAMPLE_SONGS[0];
+  const displayArt = useArtwork(displaySong);
 
   const artistInfo = ARTIST_INFO[displaySong.artist] || {
     bio: `${displaySong.artist} is a talented musician creating amazing music for fans worldwide.`,
@@ -143,7 +200,7 @@ export default function PlayerScreen({ navigation, route }) {
   };
 
   const isLiked = isSongLiked(displaySong.id);
-  const bgColor = GENRE_COLORS[displaySong.genre] || '#1DB954';
+  const bgColor = GENRE_COLORS[displaySong.genre] || '#888';
   const shareLink = `https://sonara.app/song/${displaySong.id}?title=${encodeURIComponent(displaySong.title)}&artist=${encodeURIComponent(displaySong.artist)}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(shareLink)}&format=png&margin=10`;
 
@@ -153,7 +210,9 @@ export default function PlayerScreen({ navigation, route }) {
   // live audio position — this prevents the thumb from jumping back and forth.
   const displayPosition = isSeeking ? seekPosition : position;
   const progressPercent = duration > 0 ? (displayPosition / duration) * 100 : 0;
-  const selectedAppInfo = SHARE_APPS.find(a => a.key === selectedShareApp);
+
+  const lyricLines = parseLyrics(displaySong.lyrics);
+  const activeLine = activeLyricLine(lyricLines, displayPosition, duration);
 
   // Video to play in video mode — real videoUrl if present, else demo fallback.
   const videoSource = displaySong.videoUrl || SAMPLE_VIDEO_URL;
@@ -200,6 +259,60 @@ export default function PlayerScreen({ navigation, route }) {
     if (videoRef.current) await videoRef.current.setPositionAsync(millis);
   };
 
+  // Jump the video by a delta, clamped to the clip so a skip near either end
+  // can't seek past the duration (which throws) or before zero.
+  const skipVideo = async (deltaMs) => {
+    if (!videoRef.current) return;
+    const duration = videoStatus.durationMillis || 0;
+    const current = videoStatus.positionMillis || 0;
+    const target = Math.max(0, duration ? Math.min(current + deltaMs, duration) : current + deltaMs);
+    try { await videoRef.current.setPositionAsync(target); } catch (_) {}
+    setShowVideoControls(true); // keep controls up while the user is scrubbing
+  };
+
+  // A tap on the video: double-tap the right half to jump forward, the left half to
+  // jump back. Repeat taps on the same side stack up while the indicator lingers.
+  // Anything else is a lone tap and just shows/hides the controls.
+  const handleVideoTap = (evt) => {
+    const width = videoAreaWRef.current;
+    if (!width) return; // not laid out yet — can't tell which half was tapped
+    const x = evt?.nativeEvent?.locationX ?? 0;
+    const side = x < width / 2 ? 'back' : 'forward';
+    const now = Date.now();
+    const prev = lastTapRef.current;
+    lastTapRef.current = { time: now, side };
+
+    const isDoubleTap = now - prev.time < DOUBLE_TAP_MS && prev.side === side;
+    const stacking = seekHintRef.current?.side === side; // indicator still up — keep adding
+
+    if (!isDoubleTap && !stacking) {
+      // Defer the toggle: if a second tap lands inside the window this is cancelled.
+      clearTimeout(singleTapTimerRef.current);
+      singleTapTimerRef.current = setTimeout(() => setShowVideoControls(v => !v), DOUBLE_TAP_MS);
+      return;
+    }
+
+    clearTimeout(singleTapTimerRef.current); // it's a seek, not a controls toggle
+    const step = side === 'forward' ? FORWARD_STEP_MS : BACK_STEP_MS;
+    const total = (stacking ? seekHintRef.current.total : 0) + step;
+
+    seekHintRef.current = { side, total };
+    setSeekHint({ side, total });
+    skipVideo(side === 'forward' ? step : -step);
+
+    clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = setTimeout(() => {
+      seekHintRef.current = null;
+      setSeekHint(null);
+    }, SEEK_HINT_LINGER_MS);
+  };
+
+  // Don't leave the deferred toggle or the indicator running after unmount.
+  useEffect(() => () => {
+    clearTimeout(singleTapTimerRef.current);
+    clearTimeout(hintTimerRef.current);
+  }, []);
+
   const handleDownloadVideo = () => {
     setShowVideoSettings(false);
     if (isDownloaded(displaySong.id)) {
@@ -236,10 +349,17 @@ export default function PlayerScreen({ navigation, route }) {
     };
   }, [navigation]);
 
-  // Only load the route song if it's genuinely different from what's already playing
+  // Only load the route song if nothing is already playing it. Callers that open
+  // the Player (e.g. a Library row) start the load themselves with the real queue,
+  // then navigate here; re-loading would restart the stream and replace that queue
+  // with a single song. The in-flight guard in loadAndPlay backs this up, but the
+  // currentQueue check keeps this screen from ever asking for the redundant load.
   useEffect(() => {
     const routeSong = route?.params?.song;
-    if (routeSong && routeSong.id !== currentTrack?.id) {
+    if (!routeSong) return;
+    const alreadyActive = routeSong.id === currentTrack?.id ||
+      currentQueue.some((s) => s.id === routeSong.id);
+    if (!alreadyActive) {
       loadAndPlay(routeSong, [routeSong], 0);
     }
   }, [route?.params?.song]);
@@ -267,7 +387,7 @@ export default function PlayerScreen({ navigation, route }) {
     if (!isPremium) {
       const canSkip = useSkip();
       if (!canSkip) {
-        Alert.alert('Skip Limit Reached', 'Upgrade to Premium for unlimited skips! 💎',
+        Alert.alert('Skip Limit Reached', 'Upgrade to Premium for unlimited skips!',
           [{ text: 'Maybe Later' }, { text: 'Go Premium', onPress: () => navigation.navigate('Paywall') }]);
         return;
       }
@@ -275,7 +395,7 @@ export default function PlayerScreen({ navigation, route }) {
       setSongsPlayed(n);
       if (n % 3 === 0) {
         Alert.alert('📢 Ad', 'Upgrade to Premium — no ads!',
-          [{ text: 'Maybe Later' }, { text: 'Go Premium 💎', onPress: () => navigation.navigate('Paywall') }]);
+          [{ text: 'Maybe Later' }, { text: 'Go Premium', onPress: () => navigation.navigate('Paywall') }]);
         return;
       }
     }
@@ -284,7 +404,7 @@ export default function PlayerScreen({ navigation, route }) {
 
   const handlePrevious = async () => {
     if (!isPremium) {
-      Alert.alert('Premium Feature 💎', 'Backward is Premium!',
+      Alert.alert('Premium Feature', 'Backward is Premium!',
         [{ text: 'Maybe Later' }, { text: 'Go Premium', onPress: () => navigation.navigate('Paywall') }]);
       return;
     }
@@ -296,6 +416,15 @@ export default function PlayerScreen({ navigation, route }) {
     setShowAboutArtist(false);
     loadAndPlay(song, artistInfo.topSongs, index);
   };
+
+  // Keep the lit line roughly centred as the song moves through the lyrics.
+  useEffect(() => {
+    if (!showLyricsFull || activeLine < 0 || !lyricsScrollRef.current) return;
+    lyricsScrollRef.current.scrollTo({
+      y: Math.max(0, activeLine * LYRIC_LINE_H - SCREEN_HEIGHT * 0.32),
+      animated: true,
+    });
+  }, [activeLine, showLyricsFull]);
 
   const toggleLyrics = () => {
     if (showLyrics) {
@@ -315,7 +444,7 @@ export default function PlayerScreen({ navigation, route }) {
   const promptPlaylistUpgrade = (title, message) => {
     Alert.alert(title, message, [
       { text: 'Maybe Later', style: 'cancel' },
-      { text: 'Go Premium 💎', onPress: () => navigation.navigate('Paywall') },
+      { text: 'Go Premium', onPress: () => navigation.navigate('Paywall') },
     ]);
   };
 
@@ -369,42 +498,27 @@ export default function PlayerScreen({ navigation, route }) {
     setShowCreatePlaylist(false);
     setShowAddToPlaylist(false);
     setPendingSong(null);
-    Alert.alert('Playlist Created 🎉', `"${playlist.name}" is ready and your song was added.`);
+    Alert.alert('Playlist Created', `"${playlist.name}" is ready and your song was added.`);
   };
 
-  const handleShareAppTap = (app) => {
-    setShowShare(false);
-    setSelectedShareApp(app);
-    setShowShareOptions(true);
-  };
-
+  // Matches the Create screen's share: hand off to the OS share sheet rather than
+  // deep-linking a fixed set of apps. The user picks the app there, so every app
+  // they actually have shows up — no hardcoded list to maintain.
   const shareViaLink = async () => {
-    setShowShareOptions(false);
+    // Present the OS share sheet BEFORE closing the modal. Closing first lets the
+    // modal's dismiss animation race the native sheet's presentation, and on iOS
+    // the sheet then silently fails to appear (the "nothing happens on Share" bug).
     const message = `🎵 Listen to "${displaySong.title}" by ${displaySong.artist} on Sonara!\n\n👉 Open here: ${shareLink}`;
-    const encoded = encodeURIComponent(message);
-    const appUrls = {
-      whatsapp: `whatsapp://send?text=${encoded}`,
-      instagram: `instagram://`,
-      twitter: `twitter://post?message=${encoded}`,
-      facebook: `fb://`,
-    };
-    const webUrls = {
-      whatsapp: `https://wa.me/?text=${encoded}`,
-      instagram: `https://www.instagram.com`,
-      twitter: `https://twitter.com/intent/tweet?text=${encoded}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?quote=${encoded}`,
-    };
     try {
-      const canOpen = await Linking.canOpenURL(appUrls[selectedShareApp]);
-      await Linking.openURL(canOpen ? appUrls[selectedShareApp] : webUrls[selectedShareApp]);
-    } catch {
-      try { await Linking.openURL(webUrls[selectedShareApp]); }
-      catch { Alert.alert('Error', `Could not open ${selectedShareApp}.`); }
+      await Share.share({ message, title: displaySong.title });
+    } catch (_) {}
+    finally {
+      setShowShare(false);
     }
   };
 
   const shareViaQR = () => {
-    setShowShareOptions(false);
+    setShowShare(false);
     setQrLoading(true);
     setShowQRCode(true);
   };
@@ -418,8 +532,10 @@ export default function PlayerScreen({ navigation, route }) {
       {isVideoMode && isFullScreen && (
         <View style={styles.fsContainer}>
           <StatusBar hidden />
-          <TouchableWithoutFeedback onPress={() => setShowVideoControls(v => !v)}>
-            <View style={styles.fsVideoWrap}>
+          <TouchableWithoutFeedback onPress={handleVideoTap}>
+            <View
+              style={styles.fsVideoWrap}
+              onLayout={(e) => { videoAreaWRef.current = e.nativeEvent.layout.width; }}>
               <Video
                 ref={videoRef}
                 source={{ uri: videoSource }}
@@ -428,6 +544,22 @@ export default function PlayerScreen({ navigation, route }) {
                 shouldPlay
                 onPlaybackStatusUpdate={setVideoStatus}
               />
+
+              {/* Double-tap seek indicator — only on screen while tapping */}
+              {seekHint && (
+                <View
+                  pointerEvents="none"
+                  style={[styles.seekHint, seekHint.side === 'back' ? styles.seekHintLeft : styles.seekHintRight]}>
+                  <Ionicons
+                    name={seekHint.side === 'forward' ? 'play-forward' : 'play-back'}
+                    size={30}
+                    color={c.icon}
+                  />
+                  <Text style={styles.seekHintText}>
+                    {seekHint.side === 'forward' ? '+' : '−'}{Math.round(seekHint.total / 1000)}s
+                  </Text>
+                </View>
+              )}
 
               {subtitlesOn && (
                 <View style={styles.fsCaption}>
@@ -440,18 +572,18 @@ export default function PlayerScreen({ navigation, route }) {
                   {/* Top bar */}
                   <View style={styles.fsTopBar}>
                     <TouchableOpacity onPress={exitFullScreen} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                      <Ionicons name="chevron-down" size={26} color="#fff" />
+                      <Ionicons name="chevron-down" size={26} color={c.icon} />
                     </TouchableOpacity>
                     <Text style={styles.fsTitle} numberOfLines={1}>{displaySong.title}</Text>
-                    <TouchableOpacity onPress={() => setShowVideoSettings(true)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                      <Ionicons name="settings-outline" size={22} color="#fff" />
+                    <TouchableOpacity onPress={() => { setFsPanel('main'); setShowFsSettings(true); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                      <Ionicons name="settings-outline" size={22} color={c.icon} />
                     </TouchableOpacity>
                   </View>
 
-                  {/* Center play / pause */}
+                  {/* Center: play/pause only — seeking is double-tap left/right */}
                   <View style={styles.fsCenter}>
                     <TouchableOpacity style={styles.fsPlayBtn} onPress={toggleVideoPlay}>
-                      <Ionicons name={videoStatus.isPlaying ? 'pause' : 'play'} size={40} color="#fff" />
+                      <Ionicons name={videoStatus.isPlaying ? 'pause' : 'play'} size={40} color={c.icon} />
                     </TouchableOpacity>
                   </View>
 
@@ -470,13 +602,124 @@ export default function PlayerScreen({ navigation, route }) {
                     />
                     <Text style={styles.fsTime}>{formatTime(videoStatus.durationMillis || 0)}</Text>
                     <TouchableOpacity onPress={exitFullScreen} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ marginLeft: 6 }}>
-                      <Ionicons name="contract" size={22} color="#fff" />
+                      <Ionicons name="contract" size={22} color={c.icon} />
                     </TouchableOpacity>
                   </View>
                 </View>
               )}
             </View>
           </TouchableWithoutFeedback>
+
+          {/* Fullscreen settings — an in-place overlay, NOT a Modal (a portrait Modal
+              opened while locked to landscape crashes the app). Handles Download,
+              Sleep Timer, Subtitle and Quality without leaving fullscreen. */}
+          {showFsSettings && (
+            <View style={styles.fsSettingsOverlay}>
+              <TouchableWithoutFeedback onPress={() => setShowFsSettings(false)}>
+                <View style={styles.fsSettingsBackdrop} />
+              </TouchableWithoutFeedback>
+
+              <View style={styles.fsSettingsPanel}>
+                <View style={styles.fsSettingsHeader}>
+                  {fsPanel !== 'main' ? (
+                    <TouchableOpacity onPress={() => setFsPanel('main')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="chevron-back" size={22} color={c.icon} />
+                    </TouchableOpacity>
+                  ) : <View style={{ width: 22 }} />}
+                  <Text style={styles.fsSettingsTitle}>
+                    {fsPanel === 'sleep' ? 'Sleep Timer' : fsPanel === 'quality' ? 'Quality' : 'Settings'}
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowFsSettings(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="close" size={22} color={c.icon} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView showsVerticalScrollIndicator={false} style={styles.fsSettingsScroll}>
+                  {fsPanel === 'main' && (
+                    <>
+                      {/* Download */}
+                      <TouchableOpacity style={styles.fsRow} onPress={handleDownloadVideo} activeOpacity={0.75}>
+                        <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color={c.icon} />
+                        <View style={styles.fsRowInfo}>
+                          <Text style={styles.fsRowLabel}>Download</Text>
+                          <Text style={styles.fsRowSub}>{isDownloaded(displaySong.id) ? 'Saved to your Downloads' : 'Save this video to watch offline'}</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      {/* Sleep Timer */}
+                      <TouchableOpacity style={styles.fsRow} onPress={() => setFsPanel('sleep')} activeOpacity={0.75}>
+                        <Ionicons name="timer-outline" size={20} color={c.icon} />
+                        <View style={styles.fsRowInfo}>
+                          <Text style={styles.fsRowLabel}>Sleep Timer</Text>
+                          <Text style={styles.fsRowSub}>{sleepTimerLabel ? `On · ${sleepTimerLabel}` : 'Off'}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+                      </TouchableOpacity>
+
+                      {/* Subtitles */}
+                      <View style={styles.fsRow}>
+                        <Ionicons name="chatbox-ellipses-outline" size={20} color={c.icon} />
+                        <View style={styles.fsRowInfo}>
+                          <Text style={styles.fsRowLabel}>Subtitle</Text>
+                          <Text style={styles.fsRowSub}>{subtitlesOn ? 'On' : 'Off'}</Text>
+                        </View>
+                        <Switch
+                          value={subtitlesOn}
+                          onValueChange={setSubtitlesOn}
+                          trackColor={{ false: '#3A3A3A', true: '#FF0000' }}
+                          thumbColor={c.bg}
+                        />
+                      </View>
+
+                      {/* Quality */}
+                      <TouchableOpacity style={styles.fsRow} onPress={() => setFsPanel('quality')} activeOpacity={0.75}>
+                        <Ionicons name="options-outline" size={20} color={c.icon} />
+                        <View style={styles.fsRowInfo}>
+                          <Text style={styles.fsRowLabel}>Quality</Text>
+                          <Text style={styles.fsRowSub}>Choose the video resolution</Text>
+                        </View>
+                        <Text style={styles.fsRowValue}>{videoQuality}</Text>
+                        <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+
+                  {fsPanel === 'sleep' && (
+                    <>
+                      {SLEEP_OPTIONS.map(opt => (
+                        <TouchableOpacity
+                          key={opt.label}
+                          style={[styles.fsOption, sleepTimerLabel === opt.label && styles.fsOptionActive]}
+                          onPress={() => { setSleepTimer(opt.value, opt.label); setFsPanel('main'); }}
+                          activeOpacity={0.75}>
+                          <Text style={[styles.fsOptionText, sleepTimerLabel === opt.label && { color: '#FF4444' }]}>{opt.label}</Text>
+                          {sleepTimerLabel === opt.label && <Ionicons name="checkmark-circle" size={18} color="#FF4444" />}
+                        </TouchableOpacity>
+                      ))}
+                      {sleepTimerLabel && (
+                        <TouchableOpacity style={styles.fsCancelRow} onPress={() => { cancelSleepTimer(); setFsPanel('main'); }} activeOpacity={0.75}>
+                          <Text style={styles.fsCancelText}>Cancel Timer</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  )}
+
+                  {fsPanel === 'quality' && (
+                    VIDEO_QUALITIES.map(q => (
+                      <TouchableOpacity
+                        key={q}
+                        style={[styles.fsOption, videoQuality === q && styles.fsOptionActive]}
+                        onPress={() => { setVideoQuality(q); setFsPanel('main'); }}
+                        activeOpacity={0.75}>
+                        <Text style={[styles.fsOptionText, videoQuality === q && { color: '#FF4444' }]}>{q}</Text>
+                        {videoQuality === q && <Ionicons name="checkmark-circle" size={18} color="#FF4444" />}
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -486,26 +729,64 @@ export default function PlayerScreen({ navigation, route }) {
           {isVideoMode ? (
             /* YouTube-style inline video: full-width across the very top */
             <View style={styles.inlineVideoWrap}>
-              <Video
-                source={{ uri: videoSource }}
-                style={styles.inlineVideo}
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay
-                isLooping
-                isMuted
-              />
+              {/* Tap surface sits under the controls: double-tap right/left to seek,
+                  a lone tap toggles. The clip is muted — the sound is the audio engine
+                  playing the song, so play/pause drives the engine and the picture
+                  follows it via shouldPlay. */}
+              <TouchableWithoutFeedback onPress={handleVideoTap}>
+                <View onLayout={(e) => { videoAreaWRef.current = e.nativeEvent.layout.width; }}>
+                  <Video
+                    ref={videoRef}
+                    source={{ uri: videoSource }}
+                    style={styles.inlineVideo}
+                    resizeMode={ResizeMode.CONTAIN}
+                    shouldPlay={isPlayingGlobal}
+                    isLooping
+                    isMuted
+                    onPlaybackStatusUpdate={setVideoStatus}
+                  />
+                </View>
+              </TouchableWithoutFeedback>
+
+              {/* Double-tap seek indicator */}
+              {seekHint && (
+                <View
+                  pointerEvents="none"
+                  style={[styles.seekHint, seekHint.side === 'back' ? styles.seekHintLeft : styles.seekHintRight]}>
+                  <Ionicons
+                    name={seekHint.side === 'forward' ? 'play-forward' : 'play-back'}
+                    size={24}
+                    color={c.icon}
+                  />
+                  <Text style={styles.seekHintText}>
+                    {seekHint.side === 'forward' ? '+' : '−'}{Math.round(seekHint.total / 1000)}s
+                  </Text>
+                </View>
+              )}
+
+              {/* box-none so only the button takes touches — the rest reach the
+                  tap surface underneath. */}
+              <View style={styles.inlineTransport} pointerEvents="box-none">
+                <TouchableOpacity
+                  style={styles.inlinePlayBtn}
+                  onPress={handlePlayPause}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={24} color={c.accentText} />
+                </TouchableOpacity>
+              </View>
+
               {/* Back — top-left */}
               <TouchableOpacity style={styles.inlineBack} onPress={() => navigation.goBack()}>
-                <Ionicons name="chevron-down" size={24} color="#fff" />
+                <Ionicons name="chevron-down" size={24} color={c.icon} />
               </TouchableOpacity>
               {/* Settings (download, timer, subtitles, quality) + queue — top-right */}
               <View style={styles.inlineTopRight}>
                 <TouchableOpacity style={styles.inlineIconBtn} onPress={() => setShowVideoSettings(true)}>
-                  <Ionicons name="settings-outline" size={14} color="#fff" />
+                  <Ionicons name="settings-outline" size={14} color={c.icon} />
                   <Text style={styles.videoBtnText}>{videoQuality}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.inlineIconBtnPlain} onPress={() => setShowQueue(true)}>
-                  <Ionicons name="list" size={18} color="#fff" />
+                  <Ionicons name="list" size={18} color={c.icon} />
                 </TouchableOpacity>
               </View>
               {/* Subtitles caption */}
@@ -516,7 +797,7 @@ export default function PlayerScreen({ navigation, route }) {
               )}
               {/* Expand — bottom-right */}
               <TouchableOpacity style={styles.inlineExpand} onPress={enterFullScreen}>
-                <Ionicons name="expand" size={20} color="#fff" />
+                <Ionicons name="expand" size={20} color={c.icon} />
               </TouchableOpacity>
             </View>
           ) : (
@@ -524,7 +805,7 @@ export default function PlayerScreen({ navigation, route }) {
               {/* HEADER */}
               <View style={styles.header}>
                 <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
-                  <Ionicons name="chevron-down" size={28} color="#fff" />
+                  <Ionicons name="chevron-down" size={28} color={c.icon} />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
                   <Text style={styles.headerLabel}>NOW PLAYING</Text>
@@ -533,14 +814,16 @@ export default function PlayerScreen({ navigation, route }) {
                   </View>
                 </View>
                 <TouchableOpacity style={styles.headerBtn} onPress={() => setShowQueue(true)}>
-                  <Ionicons name="list" size={24} color="#fff" />
+                  <Ionicons name="list" size={24} color={c.icon} />
                 </TouchableOpacity>
               </View>
 
               {/* ALBUM ART */}
               <View style={[styles.albumArtWrapper, { shadowColor: bgColor }]}>
                 <View style={[styles.albumArt, { backgroundColor: bgColor + '40' }]}>
-                  <Text style={styles.albumEmoji}>{displaySong.emoji || '🎵'}</Text>
+                  {displayArt
+                    ? <Image source={{ uri: displayArt }} style={styles.albumArtImg} />
+                    : <Text style={styles.albumEmoji}>{displaySong.emoji || '🎵'}</Text>}
                 </View>
               </View>
             </>
@@ -570,8 +853,8 @@ export default function PlayerScreen({ navigation, route }) {
           {/* PROGRESS BAR */}
           <View style={styles.progressSection}>
             <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progressPercent}%`, backgroundColor: bgColor }]} />
-              <View style={[styles.progressThumb, { left: `${Math.min(progressPercent, 97)}%`, backgroundColor: '#fff', shadowColor: bgColor }]} />
+              <View style={[styles.progressFill, { width: `${progressPercent}%`, backgroundColor: '#fff' }]} />
+              <View style={[styles.progressThumb, { left: `${Math.min(progressPercent, 97)}%`, backgroundColor: '#fff', shadowColor: '#fff' }]} />
             </View>
             <Slider
               style={styles.sliderOverlay}
@@ -598,15 +881,15 @@ export default function PlayerScreen({ navigation, route }) {
               {isShuffle && <View style={[styles.activeDot, { backgroundColor: bgColor }]} />}
             </TouchableOpacity>
             <TouchableOpacity style={styles.controlBtn} onPress={handlePrevious}>
-              <Ionicons name="play-skip-back" size={34} color={isPremium ? '#fff' : 'rgba(255,255,255,0.3)'} />
+              <Ionicons name="play-skip-back" size={34} color={isPremium ? c.icon : c.textFaint} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.playBtn, { backgroundColor: bgColor, shadowColor: bgColor }]}
+              style={[styles.playBtn, { backgroundColor: '#fff', shadowColor: '#fff' }]}
               onPress={handlePlayPause}>
-              <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={36} color="#fff" />
+              <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={36} color={c.accentText} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.controlBtn} onPress={handleNext}>
-              <Ionicons name="play-skip-forward" size={34} color="#fff" />
+              <Ionicons name="play-skip-forward" size={34} color={c.icon} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.controlSideBtn}
@@ -662,10 +945,21 @@ export default function PlayerScreen({ navigation, route }) {
               <View style={styles.lyricsPanelHeader}>
                 <Text style={[styles.lyricsPanelTitle, { color: bgColor }]}>Lyrics</Text>
                 <TouchableOpacity onPress={toggleLyrics}>
-                  <Ionicons name="chevron-up" size={22} color="#555" />
+                  <Ionicons name="chevron-up" size={22} color={c.textFaint} />
                 </TouchableOpacity>
               </View>
-              <Text style={styles.lyricsText}>{displaySong.lyrics || 'No lyrics available.'}</Text>
+              {/* Tapping the sheet opens the lyrics full-screen, following the song. */}
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => lyricLines.length > 0 && setShowLyricsFull(true)}>
+                <Text style={styles.lyricsText}>{displaySong.lyrics || 'No lyrics available.'}</Text>
+                {lyricLines.length > 0 && (
+                  <View style={styles.lyricsExpandHint}>
+                    <Ionicons name="expand" size={13} color={bgColor} />
+                    <Text style={[styles.lyricsExpandHintText, { color: bgColor }]}>Tap for full screen</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             </Animated.View>
           )}
 
@@ -712,7 +1006,7 @@ export default function PlayerScreen({ navigation, route }) {
                   navigation.navigate('Artist', { artist: { id: '1', name: displaySong.artist, genre: artistInfo.genre, emoji: '🎤' } });
                 }}>
                 <Text style={styles.viewProfileBtnText}>View Full Profile</Text>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+                <Ionicons name="arrow-forward" size={18} color={c.icon} />
               </TouchableOpacity>
             </ScrollView>
             <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowAboutArtist(false)}>
@@ -723,72 +1017,48 @@ export default function PlayerScreen({ navigation, route }) {
       </Modal>
 
       {/* Share */}
-      <Modal visible={showShare} transparent animationType="slide">
+      {/* Share — one step: Link (OS share sheet) or QR, same as the Create screen */}
+      <Modal visible={showShare} transparent animationType="slide" onRequestClose={() => setShowShare(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Share Song</Text>
-            <View style={[styles.shareCard, { borderColor: bgColor + '40' }]}>
-              <View style={[styles.shareCardArt, { backgroundColor: bgColor + '25' }]}>
-                <Text style={{ fontSize: 30 }}>{displaySong.emoji || '🎵'}</Text>
+
+            <View style={styles.shareCard}>
+              <View style={styles.shareCardArt}>
+                {displaySong.imageUrl
+                  ? <Image source={{ uri: displaySong.imageUrl }} style={styles.shareCardArtImg} />
+                  : <Text style={{ fontSize: 28 }}>{displaySong.emoji || '🎵'}</Text>}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.shareCardTitle} numberOfLines={1}>{displaySong.title}</Text>
-                <Text style={[styles.shareCardArtist, { color: bgColor }]}>{displaySong.artist}</Text>
+                <Text style={styles.shareCardArtist} numberOfLines={1}>{displaySong.artist}</Text>
               </View>
             </View>
-            <Text style={styles.shareSubLabel}>Choose an app to share:</Text>
-            <View style={styles.shareGrid}>
-              {SHARE_APPS.map(app => (
-                <TouchableOpacity key={app.key} style={styles.shareAppBtn} onPress={() => handleShareAppTap(app.key)}>
-                  <View style={[styles.shareAppIcon, { backgroundColor: app.color }]}>
-                    <Ionicons name={app.icon} size={28} color="#fff" />
-                  </View>
-                  <Text style={styles.shareAppName}>{app.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowShare(false)}>
-              <Text style={styles.sheetCloseBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
-      {/* Share Options — Link or QR */}
-      <Modal visible={showShareOptions} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            {selectedAppInfo && (
-              <View style={styles.shareAppHeader}>
-                <View style={[styles.shareAppIconLarge, { backgroundColor: selectedAppInfo.color }]}>
-                  <Ionicons name={selectedAppInfo.icon} size={36} color="#fff" />
-                </View>
-                <Text style={styles.shareAppHeaderTitle}>Share via {selectedAppInfo.name}</Text>
-              </View>
-            )}
-            <TouchableOpacity style={[styles.shareOptionBtn, { backgroundColor: bgColor }]} onPress={shareViaLink}>
+            <TouchableOpacity style={styles.shareOptionBtn} onPress={shareViaLink} activeOpacity={0.85}>
               <View style={styles.shareOptionLeft}>
-                <Ionicons name="link" size={24} color="#fff" />
+                <Ionicons name="link" size={22} color={c.accentText} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.shareOptionTitle}>Send as Link</Text>
-                  <Text style={styles.shareOptionSub}>They tap the link to open in Sonara</Text>
+                  <Text style={styles.shareOptionTitle}>Share as Link</Text>
+                  <Text style={styles.shareOptionSub}>Send it through any app on your phone</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
+              <Ionicons name="chevron-forward" size={18} color="rgba(0,0,0,0.45)" />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.shareOptionBtnOutline, { borderColor: bgColor + '50' }]} onPress={shareViaQR}>
+
+            <TouchableOpacity style={styles.shareOptionBtnOutline} onPress={shareViaQR} activeOpacity={0.85}>
               <View style={styles.shareOptionLeft}>
-                <Ionicons name="qr-code" size={24} color={bgColor} />
+                <Ionicons name="qr-code" size={22} color={c.icon} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.shareOptionTitle, { color: bgColor }]}>Send as QR Code</Text>
-                  <Text style={styles.shareOptionSub}>They scan it to open the song</Text>
+                  <Text style={styles.shareOptionTitleOutline}>Share as QR Code</Text>
+                  <Text style={styles.shareOptionSubOutline}>They scan it to open the song</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#555" />
+              <Ionicons name="chevron-forward" size={18} color={c.textFaint} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowShareOptions(false)}>
+
+            <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowShare(false)}>
               <Text style={styles.sheetCloseBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -800,11 +1070,11 @@ export default function PlayerScreen({ navigation, route }) {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, { alignItems: 'center' }]}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>QR Code 📱</Text>
+            <Text style={styles.modalTitle}>QR Code</Text>
             <Text style={styles.modalSub}>
-              Screenshot and send via {selectedAppInfo?.name || 'the app'}.{'\n'}They scan it to open the song!
+              Screenshot it and send it to anyone.{'\n'}They scan it to open the song.
             </Text>
-            <View style={[styles.qrBox, { borderColor: bgColor }]}>
+            <View style={styles.qrBox}>
               {qrLoading && (
                 <View style={styles.qrLoadingOverlay}>
                   <Text style={styles.qrLoadingText}>Generating QR...</Text>
@@ -840,7 +1110,7 @@ export default function PlayerScreen({ navigation, route }) {
                 setShowLikeOptions(false);
                 Alert.alert('❤️ Liked!', 'Added to Liked Songs in your Library!');
               }}>
-              <Ionicons name="heart" size={20} color="#fff" />
+              <Ionicons name="heart" size={20} color={c.icon} />
               <Text style={styles.likeOptionBtnText}>Add to Liked Songs</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -850,7 +1120,7 @@ export default function PlayerScreen({ navigation, route }) {
                 setShowLikeOptions(false);
                 handleAddToPlaylist(displaySong);
               }}>
-              <Ionicons name="musical-notes-outline" size={20} color="#fff" />
+              <Ionicons name="musical-notes-outline" size={20} color={c.icon} />
               <Text style={styles.likeOptionOutlineText}>Also add to a Playlist</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowLikeOptions(false)}>
@@ -868,7 +1138,7 @@ export default function PlayerScreen({ navigation, route }) {
             <View style={styles.modalTitleRow}>
               <Text style={styles.modalTitle}>Add to Playlist</Text>
               <TouchableOpacity onPress={() => { setShowAddToPlaylist(false); setPendingSong(null); }}>
-                <Ionicons name="close" size={24} color="#555" />
+                <Ionicons name="close" size={24} color={c.textFaint} />
               </TouchableOpacity>
             </View>
             <TouchableOpacity
@@ -886,7 +1156,7 @@ export default function PlayerScreen({ navigation, route }) {
                 setShowCreatePlaylist(true);
               }}>
               <View style={[styles.createPlaylistIcon, { backgroundColor: bgColor }]}>
-                <Ionicons name="add" size={22} color="#fff" />
+                <Ionicons name="add" size={22} color={c.icon} />
               </View>
               <Text style={[styles.createPlaylistText, { color: bgColor }]}>Create New Playlist</Text>
             </TouchableOpacity>
@@ -918,7 +1188,7 @@ export default function PlayerScreen({ navigation, route }) {
                       </Text>
                     </View>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color="#555" />
+                  <Ionicons name="chevron-forward" size={18} color={c.textFaint} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -958,6 +1228,60 @@ export default function PlayerScreen({ navigation, route }) {
             </TouchableOpacity>
             <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowCreatePlaylist(false)}>
               <Text style={styles.sheetCloseBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Full-screen lyrics — follows the song. Only ever opened from the audio
+          player (portrait), so a Modal is safe here; the video fullscreen is the
+          one place a Modal must not be used. */}
+      <Modal visible={showLyricsFull} animationType="slide" onRequestClose={() => setShowLyricsFull(false)}>
+        <View style={[styles.lyricsFullContainer, { backgroundColor: bgColor + '14' }]}>
+          <View style={styles.lyricsFullHeader}>
+            <TouchableOpacity
+              style={styles.lyricsFullClose}
+              onPress={() => setShowLyricsFull(false)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="chevron-down" size={26} color={c.icon} />
+            </TouchableOpacity>
+            <View style={styles.lyricsFullTitleWrap}>
+              <Text style={styles.lyricsFullTitle} numberOfLines={1}>{displaySong.title}</Text>
+              <Text style={styles.lyricsFullArtist} numberOfLines={1}>{displaySong.artist}</Text>
+            </View>
+            <View style={{ width: 40 }} />
+          </View>
+
+          <ScrollView
+            ref={lyricsScrollRef}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.lyricsFullScroll}>
+            {lyricLines.map((line, i) => (
+              line.isSection ? (
+                <Text key={i} style={[styles.lyricsFullSection, { color: bgColor }]}>{line.text}</Text>
+              ) : (
+                <Text
+                  key={i}
+                  style={[
+                    styles.lyricsFullLine,
+                    i === activeLine && [styles.lyricsFullLineActive, { color: '#fff' }],
+                    i < activeLine && styles.lyricsFullLinePast,
+                  ]}>
+                  {line.text}
+                </Text>
+              )
+            ))}
+          </ScrollView>
+
+          {/* Transport so the song stays controllable without leaving the lyrics */}
+          <View style={styles.lyricsFullBar}>
+            <Text style={styles.lyricsFullTime}>{formatTime(displayPosition)}</Text>
+            <View style={styles.lyricsFullTrack}>
+              <View style={[styles.lyricsFullFill, { width: `${progressPercent}%` }]} />
+            </View>
+            <Text style={styles.lyricsFullTime}>{formatTime(duration)}</Text>
+            <TouchableOpacity style={styles.lyricsFullPlay} onPress={handlePlayPause}>
+              <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={20} color={c.accentText} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1037,31 +1361,31 @@ export default function PlayerScreen({ navigation, route }) {
             {/* Download */}
             <TouchableOpacity style={styles.vsRow} onPress={handleDownloadVideo} activeOpacity={0.75}>
               <View style={styles.vsIcon}>
-                <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color={isDownloaded(displaySong.id) ? '#1DB954' : '#fff'} />
+                <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color={c.icon} />
               </View>
               <View style={styles.vsInfo}>
                 <Text style={styles.vsLabel}>Download</Text>
                 <Text style={styles.vsSub}>{isDownloaded(displaySong.id) ? 'Saved to your Downloads' : 'Save this video to watch offline'}</Text>
               </View>
-              {!isDownloaded(displaySong.id) && <Ionicons name="chevron-forward" size={16} color="#555" />}
+              {!isDownloaded(displaySong.id) && <Ionicons name="chevron-forward" size={16} color={c.textFaint} />}
             </TouchableOpacity>
 
             {/* Sleep Timer */}
             <TouchableOpacity style={styles.vsRow} onPress={() => { setShowVideoSettings(false); setShowSleepTimer(true); }} activeOpacity={0.75}>
               <View style={styles.vsIcon}>
-                <Ionicons name="timer-outline" size={20} color="#fff" />
+                <Ionicons name="timer-outline" size={20} color={c.icon} />
               </View>
               <View style={styles.vsInfo}>
                 <Text style={styles.vsLabel}>Sleep Timer</Text>
                 <Text style={styles.vsSub}>{sleepTimerLabel ? `On · ${sleepTimerLabel}` : 'Off'}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#555" />
+              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
             </TouchableOpacity>
 
             {/* Subtitles */}
             <View style={styles.vsRow}>
               <View style={styles.vsIcon}>
-                <Ionicons name="chatbox-ellipses-outline" size={20} color="#fff" />
+                <Ionicons name="chatbox-ellipses-outline" size={20} color={c.icon} />
               </View>
               <View style={styles.vsInfo}>
                 <Text style={styles.vsLabel}>Subtitles</Text>
@@ -1071,21 +1395,21 @@ export default function PlayerScreen({ navigation, route }) {
                 value={subtitlesOn}
                 onValueChange={setSubtitlesOn}
                 trackColor={{ false: '#2A2A2A', true: bgColor }}
-                thumbColor="#fff"
+                thumbColor={c.bg}
               />
             </View>
 
             {/* Quality */}
             <TouchableOpacity style={styles.vsRow} onPress={() => { setShowVideoSettings(false); setShowQualityOptions(true); }} activeOpacity={0.75}>
               <View style={styles.vsIcon}>
-                <Ionicons name="options-outline" size={20} color="#fff" />
+                <Ionicons name="options-outline" size={20} color={c.icon} />
               </View>
               <View style={styles.vsInfo}>
                 <Text style={styles.vsLabel}>Quality</Text>
                 <Text style={styles.vsSub}>Choose the video resolution</Text>
               </View>
               <Text style={styles.vsValue}>{videoQuality}</Text>
-              <Ionicons name="chevron-forward" size={16} color="#555" />
+              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowVideoSettings(false)}>
@@ -1125,7 +1449,7 @@ export default function PlayerScreen({ navigation, route }) {
             <View style={styles.modalTitleRow}>
               <Text style={styles.modalTitle}>Queue</Text>
               <TouchableOpacity onPress={() => setShowQueue(false)}>
-                <Ionicons name="close" size={24} color="#555" />
+                <Ionicons name="close" size={24} color={c.textFaint} />
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -1157,7 +1481,7 @@ export default function PlayerScreen({ navigation, route }) {
 
       {!isConnected && (
         <View style={styles.offlineBanner}>
-          <Ionicons name="wifi-outline" size={16} color="#fff" />
+          <Ionicons name="wifi-outline" size={16} color={c.icon} />
           <Text style={styles.offlineText}>No internet connection</Text>
         </View>
       )}
@@ -1165,58 +1489,114 @@ export default function PlayerScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   bgGlow: { position: 'absolute', top: 0, left: 0, right: 0, height: 260, opacity: 0.2 },
-  bgDark: { position: 'absolute', top: 160, left: 0, right: 0, bottom: 0, backgroundColor: '#0A0A0A' },
+  bgDark: { position: 'absolute', top: 160, left: 0, right: 0, bottom: 0, backgroundColor: c.bg },
   scrollContent: { paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 55, marginBottom: 20 },
   headerBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   headerCenter: { alignItems: 'center', gap: 6 },
   headerLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase' },
   genreBadge: { paddingHorizontal: 14, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
-  genreBadgeText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  genreBadgeText: { fontSize: 11, fontWeight: '700', color: c.text },
   albumArtWrapper: { alignSelf: 'center', marginBottom: 28, shadowOffset: { width: 0, height: 15 }, shadowOpacity: 0.5, shadowRadius: 25, elevation: 15 },
-  albumArt: { width: SCREEN_WIDTH - 80, height: SCREEN_WIDTH - 80, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  albumArt: { width: SCREEN_WIDTH - 80, height: SCREEN_WIDTH - 80, borderRadius: 20, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  albumArtImg: { width: '100%', height: '100%' },
   albumEmoji: { fontSize: 100 },
   videoContainer: { marginHorizontal: 20, height: 220, borderRadius: 16, overflow: 'hidden', marginBottom: 24, position: 'relative' },
   videoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   videoEmoji: { fontSize: 70 },
   videoActions: { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', gap: 8 },
   videoBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
-  videoBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  videoBtnText: { color: c.text, fontSize: 11, fontWeight: '600' },
   videoPosterPlay: { position: 'absolute', width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
   videoPosterHint: { position: 'absolute', bottom: 44, color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' },
 
   // Inline (half-screen) YouTube-style video at the top
-  inlineVideoWrap: { width: SCREEN_WIDTH, backgroundColor: '#000', paddingTop: 44, marginBottom: 22, position: 'relative' },
-  inlineVideo: { width: SCREEN_WIDTH, height: INLINE_VIDEO_H, backgroundColor: '#000' },
+  inlineVideoWrap: { width: SCREEN_WIDTH, backgroundColor: c.bg, paddingTop: 44, marginBottom: 22, position: 'relative' },
+  inlineVideo: { width: SCREEN_WIDTH, height: INLINE_VIDEO_H, backgroundColor: c.bg },
   inlineBack: { position: 'absolute', top: 52, left: 10, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
   inlineTopRight: { position: 'absolute', top: 54, right: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   inlineIconBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10 },
   inlineIconBtnPlain: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
   inlineExpand: { position: 'absolute', bottom: 10, right: 12, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+
+  // Inline video transport (back 5s · play/pause · forward 10s)
+  inlineTransport: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, top: 44,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  inlinePlayBtn: {
+    width: 52, height: 52, borderRadius: 26, backgroundColor: c.accent,
+    alignItems: 'center', justifyContent: 'center',
+  },
   videoCaption: { position: 'absolute', bottom: 12, left: 16, right: 60, alignItems: 'center' },
   fsCaption: { position: 'absolute', bottom: 70, left: 0, right: 0, alignItems: 'center', paddingHorizontal: 30 },
-  videoCaptionText: { color: '#fff', fontSize: 14, fontWeight: '700', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, overflow: 'hidden' },
+  videoCaptionText: { color: c.text, fontSize: 14, fontWeight: '700', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, overflow: 'hidden' },
 
   // ── YouTube-style fullscreen ──
-  fsContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000', zIndex: 1000 },
-  fsVideoWrap: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+  fsContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: c.bg, zIndex: 1000 },
+  fsVideoWrap: { flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' },
   fsVideo: { width: '100%', height: '100%' },
   fsControls: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'space-between' },
   fsTopBar: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 22, paddingTop: 22 },
-  fsTitle: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '700' },
+  fsTitle: { flex: 1, color: c.text, fontSize: 16, fontWeight: '700' },
   fsCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   fsPlayBtn: { width: 74, height: 74, borderRadius: 37, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+
+  // Double-tap seek indicator — appears only while tapping, then fades out
+  seekHint: {
+    position: 'absolute', top: 0, bottom: 0, width: '38%',
+    alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+  },
+  seekHintLeft: { left: 0, borderTopRightRadius: 160, borderBottomRightRadius: 160 },
+  seekHintRight: { right: 0, borderTopLeftRadius: 160, borderBottomLeftRadius: 160 },
+  seekHintText: { color: c.text, fontSize: 14, fontWeight: '900' },
   fsBottomBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingBottom: 20, gap: 8 },
-  fsTime: { color: '#fff', fontSize: 12, fontWeight: '600', width: 46, textAlign: 'center' },
+  fsTime: { color: c.text, fontSize: 12, fontWeight: '600', width: 46, textAlign: 'center' },
   fsSlider: { flex: 1, height: 40 },
+
+  // Fullscreen settings overlay (landscape-safe, no Modal)
+  fsSettingsOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    flexDirection: 'row', justifyContent: 'flex-end', zIndex: 1200,
+  },
+  fsSettingsBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  fsSettingsPanel: {
+    width: 360, maxWidth: '55%', height: '100%',
+    backgroundColor: 'rgba(18,18,18,0.98)', paddingTop: 16, paddingHorizontal: 18,
+    borderLeftWidth: 1, borderLeftColor: c.borderStrong,
+  },
+  fsSettingsHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#222',
+  },
+  fsSettingsTitle: { color: c.text, fontSize: 16, fontWeight: '800' },
+  fsSettingsScroll: { paddingTop: 6 },
+  fsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: c.border,
+  },
+  fsRowInfo: { flex: 1 },
+  fsRowLabel: { color: c.text, fontSize: 15, fontWeight: '700' },
+  fsRowSub: { color: c.textDim, fontSize: 12, marginTop: 2 },
+  fsRowValue: { color: c.textDim, fontSize: 13, fontWeight: '700', marginRight: 4 },
+  fsOption: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, paddingHorizontal: 14, borderRadius: 10,
+    marginBottom: 8, backgroundColor: c.elevated,
+  },
+  fsOptionActive: { backgroundColor: 'rgba(255,68,68,0.12)', borderWidth: 1, borderColor: '#FF4444' },
+  fsOptionText: { color: c.text, fontSize: 15, fontWeight: '600' },
+  fsCancelRow: { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
+  fsCancelText: { color: '#FF5555', fontSize: 14, fontWeight: '700' },
   songInfoRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, marginBottom: 20 },
   songInfoLeft: { flex: 1, marginRight: 16 },
-  songTitle: { fontSize: 22, fontWeight: '800', color: '#fff', letterSpacing: -0.3, marginBottom: 6 },
+  songTitle: { fontSize: 22, fontWeight: '800', color: c.text, letterSpacing: -0.3, marginBottom: 6 },
   songArtist: { fontSize: 15, fontWeight: '600' },
-  songAlbum: { fontSize: 12, color: '#555', marginTop: 3 },
+  songAlbum: { fontSize: 12, color: c.textFaint, marginTop: 3 },
   songInfoRight: { flexDirection: 'row', gap: 18, alignItems: 'center' },
   progressSection: { paddingHorizontal: 24, marginBottom: 20 },
   progressTrack: { height: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 4, position: 'relative' },
@@ -1231,99 +1611,149 @@ const styles = StyleSheet.create({
   playBtn: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 14, elevation: 10 },
   activeDot: { width: 4, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 3 },
   repeatBadge: { position: 'absolute', top: -4, right: -4, width: 15, height: 15, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  repeatBadgeText: { color: '#fff', fontSize: 8, fontWeight: '800' },
+  repeatBadgeText: { color: c.text, fontSize: 8, fontWeight: '800' },
   actionRow: { flexDirection: 'row', justifyContent: 'space-around', marginHorizontal: 20, marginBottom: 24 },
   actionBtn: { alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8 },
   actionLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
   premiumDot: { position: 'absolute', top: -3, right: -3 },
   lyricsPanel: { marginHorizontal: 20, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1 },
+  lyricsExpandHint: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 },
+  lyricsExpandHintText: { fontSize: 12, fontWeight: '800' },
+
+  // Full-screen lyrics
+  lyricsFullContainer: { flex: 1, backgroundColor: c.bg },
+  lyricsFullHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingTop: 56, paddingBottom: 16,
+  },
+  lyricsFullClose: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center',
+  },
+  lyricsFullTitleWrap: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  lyricsFullTitle: { color: c.text, fontSize: 15, fontWeight: '800' },
+  lyricsFullArtist: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '600', marginTop: 2 },
+  lyricsFullScroll: { paddingHorizontal: 26, paddingTop: 20, paddingBottom: 220 },
+  lyricsFullSection: {
+    fontSize: 12, fontWeight: '900', letterSpacing: 1.4,
+    textTransform: 'uppercase', marginTop: 26, marginBottom: 10,
+  },
+  lyricsFullLine: {
+    fontSize: 21, lineHeight: 30, fontWeight: '800',
+    color: 'rgba(255,255,255,0.35)', marginBottom: 16, letterSpacing: -0.3,
+  },
+  lyricsFullLineActive: { fontSize: 24, lineHeight: 32 },
+  lyricsFullLinePast: { color: 'rgba(255,255,255,0.2)' },
+  lyricsFullBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 22, paddingTop: 16, paddingBottom: 38,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  lyricsFullTime: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '700', width: 38, textAlign: 'center' },
+  lyricsFullTrack: { flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden' },
+  lyricsFullFill: { height: '100%', backgroundColor: c.accent, borderRadius: 2 },
+  lyricsFullPlay: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: c.accent,
+    alignItems: 'center', justifyContent: 'center', marginLeft: 4,
+  },
   lyricsPanelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   lyricsPanelTitle: { fontSize: 16, fontWeight: '800' },
   lyricsText: { color: 'rgba(255,255,255,0.75)', fontSize: 15, lineHeight: 30, textAlign: 'center' },
   offlineBanner: { position: 'absolute', bottom: 30, left: 20, right: 20, backgroundColor: '#ff4444', padding: 12, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  offlineText: { color: '#fff', fontWeight: '700' },
+  offlineText: { color: c.text, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#161616', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, maxHeight: SCREEN_HEIGHT * 0.9 },
+  modalSheet: { backgroundColor: c.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, maxHeight: SCREEN_HEIGHT * 0.9 },
   modalHandle: { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 4, textAlign: 'center' },
-  modalSub: { color: '#555', fontSize: 13, marginBottom: 16, textAlign: 'center', lineHeight: 20 },
-  shareSubLabel: { color: '#888', fontSize: 13, marginBottom: 16 },
-  shareCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#1E1E1E', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1 },
-  shareCardArt: { width: 52, height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  shareCardTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  shareCardArtist: { fontSize: 13, fontWeight: '600', marginTop: 3 },
-  shareGrid: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 },
-  shareAppBtn: { alignItems: 'center', gap: 8 },
-  shareAppIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
-  shareAppName: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600' },
-  shareAppHeader: { alignItems: 'center', marginBottom: 20 },
-  shareAppIconLarge: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  shareAppHeaderTitle: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 4 },
-  shareOptionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 16, marginBottom: 10 },
-  shareOptionBtnOutline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 16, marginBottom: 10, borderWidth: 1.5 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: c.text, marginBottom: 4, textAlign: 'center' },
+  modalSub: { color: c.textFaint, fontSize: 13, marginBottom: 16, textAlign: 'center', lineHeight: 20 },
+  shareCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: c.elevated, borderRadius: 12, padding: 14, marginBottom: 18,
+    borderWidth: 1, borderColor: c.border,
+  },
+  shareCardArt: {
+    width: 52, height: 52, borderRadius: 10, backgroundColor: c.surface,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  shareCardArtImg: { width: '100%', height: '100%' },
+  shareCardTitle: { color: c.text, fontSize: 15, fontWeight: '800' },
+  shareCardArtist: { color: c.textDim, fontSize: 13, fontWeight: '600', marginTop: 3 },
+  shareOptionBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 16, borderRadius: 12, marginBottom: 10, backgroundColor: c.accent,
+  },
+  shareOptionBtnOutline: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 16, borderRadius: 12, marginBottom: 10,
+    backgroundColor: c.elevated, borderWidth: 1, borderColor: c.borderStrong,
+  },
   shareOptionLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  shareOptionTitle: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 2 },
-  shareOptionSub: { color: '#666', fontSize: 12 },
-  qrBox: { width: 250, height: 250, borderRadius: 16, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginBottom: 16, backgroundColor: '#fff', overflow: 'hidden' },
+  shareOptionTitle: { color: c.accentText, fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  shareOptionSub: { color: 'rgba(0,0,0,0.55)', fontSize: 12, fontWeight: '600' },
+  shareOptionTitleOutline: { color: c.text, fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  shareOptionSubOutline: { color: c.textDim, fontSize: 12, fontWeight: '600' },
+  qrBox: { width: 250, height: 250, borderRadius: 16, borderWidth: 1, borderColor: c.borderStrong, alignItems: 'center', justifyContent: 'center', marginBottom: 16, backgroundColor: c.accent, overflow: 'hidden' },
   qrImage: { width: 250, height: 250 },
   qrLoadingOverlay: { position: 'absolute', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f0f0', zIndex: 1 },
-  qrLoadingText: { color: '#333', fontSize: 14, fontWeight: '600' },
+  qrLoadingText: { color: c.textFaint, fontSize: 14, fontWeight: '600' },
   likeHeader: { alignItems: 'center', marginBottom: 20 },
   likeEmoji: { fontSize: 40, marginBottom: 8 },
   likeOptionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, borderRadius: 16, marginBottom: 10 },
-  likeOptionBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  likeOptionOutline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: '#333' },
-  likeOptionOutlineText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  likeOptionBtnText: { color: c.text, fontSize: 16, fontWeight: '700' },
+  likeOptionOutline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: c.borderStrong },
+  likeOptionOutlineText: { color: c.text, fontSize: 16, fontWeight: '600' },
   createPlaylistBtn: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', marginBottom: 16 },
   createPlaylistIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   createPlaylistText: { fontSize: 15, fontWeight: '700' },
   playlistOptionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   playlistOptionEmoji: { fontSize: 24 },
-  sheetOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderRadius: 14, marginBottom: 8, backgroundColor: '#1E1E1E' },
-  sheetOptionText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  sheetOptionSub: { color: '#555', fontSize: 12, marginTop: 2 },
+  sheetOption: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderRadius: 14, marginBottom: 8, backgroundColor: c.elevated },
+  sheetOptionText: { color: c.text, fontSize: 15, fontWeight: '600' },
+  sheetOptionSub: { color: c.textFaint, fontSize: 12, marginTop: 2 },
 
   // Video settings rows
-  vsRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1E1E1E' },
-  vsIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#1E1E1E', alignItems: 'center', justifyContent: 'center' },
+  vsRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.border },
+  vsIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' },
   vsInfo: { flex: 1 },
-  vsLabel: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  vsSub: { color: '#666', fontSize: 12, marginTop: 3 },
-  vsValue: { color: '#888', fontSize: 14, fontWeight: '700', marginRight: 4 },
+  vsLabel: { color: c.text, fontSize: 15, fontWeight: '700' },
+  vsSub: { color: c.textFaint, fontSize: 12, marginTop: 3 },
+  vsValue: { color: c.textDim, fontSize: 14, fontWeight: '700', marginRight: 4 },
 
-  sheetCloseBtn: { backgroundColor: '#1E1E1E', padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 8 },
-  sheetCloseBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  input: { backgroundColor: '#1E1E1E', color: '#fff', padding: 15, borderRadius: 14, fontSize: 16, marginBottom: 16, borderWidth: 1, borderColor: '#2a2a2a' },
-  emojiLabel: { color: '#555', fontSize: 13, marginBottom: 10 },
+  sheetCloseBtn: { backgroundColor: c.elevated, padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 8 },
+  sheetCloseBtnText: { color: c.text, fontSize: 15, fontWeight: '700' },
+  input: { backgroundColor: c.elevated, color: c.text, padding: 15, borderRadius: 14, fontSize: 16, marginBottom: 16, borderWidth: 1, borderColor: c.borderStrong },
+  emojiLabel: { color: c.textFaint, fontSize: 13, marginBottom: 10 },
   emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
-  emojiOption: { width: 44, height: 44, backgroundColor: '#1E1E1E', borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  emojiOption: { width: 44, height: 44, backgroundColor: c.elevated, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
   emojiText: { fontSize: 22 },
   saveBtn: { padding: 16, borderRadius: 16, alignItems: 'center', marginBottom: 8 },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  saveBtnText: { color: c.text, fontSize: 15, fontWeight: '800' },
   dangerBtn: { padding: 14, alignItems: 'center' },
   dangerBtnText: { color: '#ff4444', fontSize: 15, fontWeight: '700' },
   countGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20, justifyContent: 'center' },
-  countBtn: { width: 68, height: 68, backgroundColor: '#1E1E1E', borderRadius: 34, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
-  countBtnText: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  queueItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, marginBottom: 8, backgroundColor: '#1E1E1E', gap: 12 },
+  countBtn: { width: 68, height: 68, backgroundColor: c.elevated, borderRadius: 34, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  countBtnText: { color: c.text, fontSize: 20, fontWeight: '800' },
+  queueItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, marginBottom: 8, backgroundColor: c.elevated, gap: 12 },
   queueArt: { width: 46, height: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   queueEmoji: { fontSize: 22 },
   queueInfo: { flex: 1 },
-  queueTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  queueArtist: { color: '#555', fontSize: 12, marginTop: 2 },
+  queueTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
+  queueArtist: { color: c.textFaint, fontSize: 12, marginTop: 2 },
   artistHero: { borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 20 },
   artistAvatarCircle: { width: 90, height: 90, borderRadius: 45, alignItems: 'center', justifyContent: 'center', borderWidth: 2, marginBottom: 12 },
   artistAvatarEmoji: { fontSize: 44 },
-  artistHeroName: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 8 },
+  artistHeroName: { color: c.text, fontSize: 22, fontWeight: '800', marginBottom: 8 },
   artistGenreBadge: { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 12, borderWidth: 1 },
   artistGenreBadgeText: { fontSize: 12, fontWeight: '700' },
   artistBio: { color: 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 20 },
   topSongsHeading: { fontSize: 16, fontWeight: '800', marginBottom: 12 },
-  topSongRow: { flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: '#1E1E1E', borderRadius: 14, marginBottom: 8, gap: 10 },
+  topSongRow: { flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: c.elevated, borderRadius: 14, marginBottom: 8, gap: 10 },
   topSongNum: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   topSongNumText: { fontSize: 13, fontWeight: '800' },
-  topSongName: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1 },
+  topSongName: { color: c.text, fontSize: 14, fontWeight: '600', flex: 1 },
   viewProfileBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 16, marginTop: 12, marginBottom: 8 },
-  viewProfileBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  viewProfileBtnText: { color: c.text, fontSize: 15, fontWeight: '800' },
 });

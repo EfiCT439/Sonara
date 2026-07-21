@@ -11,13 +11,15 @@ const FEATURES = [
   { icon: 'list', title: 'Create Playlists', desc: 'Build and curate unlimited personal playlists', premium: true },
   { icon: 'ban-outline', title: 'Zero Ads', desc: 'Pure music with absolutely no interruptions', premium: true },
   { icon: 'mic-outline', title: 'Song Recognition', desc: 'Identify any song playing around you', premium: true },
-  { icon: 'sparkles-outline', title: 'AI Lyrics Generator', desc: 'Generate original lyrics powered by AI', premium: true },
+  { icon: 'sparkles-outline', title: 'AI Song Generator', desc: 'Describe a song — AI produces the track and writes the lyrics', premium: true },
   { icon: 'moon-outline', title: 'Sleep Timer', desc: 'Auto-stop music when you drift off', premium: false },
   { icon: 'heart-outline', title: 'Like & Save Songs', desc: 'Build your personal music library', premium: false },
 ];
 
 export default function PremiumScreen({ navigation }) {
   const { isPremium } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -35,26 +37,21 @@ export default function PremiumScreen({ navigation }) {
       <Animated.View style={[styles.hero, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         {isPremium ? (
           <>
-            <View style={styles.heroIconCircle}>
-              <Ionicons name="diamond" size={44} color="#FFD700" />
-            </View>
-            <Text style={styles.heroTitle}>You're Premium 🎉</Text>
+            <Text style={styles.heroEyebrow}>Sonara</Text>
+            <Text style={styles.heroTitle}>Premium</Text>
             <Text style={styles.heroSub}>All features are unlocked and ready to enjoy.</Text>
             <View style={styles.activePill}>
-              <Ionicons name="checkmark-circle" size={15} color="#0A0A0A" />
-              <Text style={styles.activePillText}>Active Subscription · $1/month</Text>
+              <Ionicons name="checkmark-circle" size={14} color={c.accentText} />
+              <Text style={styles.activePillText}>Active · $1/month</Text>
             </View>
           </>
         ) : (
           <>
-            <View style={styles.heroIconCircle}>
-              <Ionicons name="diamond-outline" size={44} color="#FFD700" />
-            </View>
-            <Text style={styles.heroTitle}>Sonara Premium</Text>
+            <Text style={styles.heroEyebrow}>Sonara</Text>
+            <Text style={styles.heroTitle}>Premium</Text>
             <Text style={styles.heroSub}>The best music experience for just $1/month</Text>
             <TouchableOpacity style={styles.upgradeBtn} onPress={() => navigation.navigate('Paywall')} activeOpacity={0.85}>
-              <Ionicons name="flash" size={18} color="#000" />
-              <Text style={styles.upgradeBtnText}>Upgrade Now — $1/month</Text>
+              <Text style={styles.upgradeBtnText}>Upgrade — $1/month</Text>
             </TouchableOpacity>
           </>
         )}
@@ -70,20 +67,20 @@ export default function PremiumScreen({ navigation }) {
             styles.featureCard,
             { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
           ]}>
-          <View style={[styles.featureIconBox, !f.premium && styles.featureIconBoxFree]}>
-            <Ionicons name={f.icon} size={20} color={f.premium ? '#FFD700' : '#1DB954'} />
+          <View style={styles.featureIconBox}>
+            <Ionicons name={f.icon} size={20} color={c.icon} />
           </View>
           <View style={styles.featureInfo}>
             <View style={styles.featureTitleRow}>
               <Text style={styles.featureTitle}>{f.title}</Text>
               {f.premium && !isPremium && (
                 <View style={styles.lockBadge}>
-                  <Ionicons name="lock-closed" size={10} color="#FFD700" />
+                  <Ionicons name="lock-closed" size={9} color={c.textDim} />
                   <Text style={styles.lockBadgeText}>Premium</Text>
                 </View>
               )}
               {(f.premium && isPremium) && (
-                <Ionicons name="checkmark-circle" size={16} color="#1DB954" />
+                <Ionicons name="checkmark-circle" size={15} color={c.textDim} />
               )}
             </View>
             <Text style={styles.featureDesc}>{f.desc}</Text>
@@ -94,7 +91,6 @@ export default function PremiumScreen({ navigation }) {
       {/* CTA (non-premium only) */}
       {!isPremium && (
         <TouchableOpacity style={styles.bigCta} onPress={() => navigation.navigate('Paywall')} activeOpacity={0.85}>
-          <Ionicons name="diamond" size={20} color="#000" />
           <Text style={styles.bigCtaText}>Get Premium for $1/month</Text>
         </TouchableOpacity>
       )}
@@ -104,114 +100,90 @@ export default function PremiumScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   scroll: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 120 },
 
   hero: {
     alignItems: 'center',
-    backgroundColor: '#161616',
-    borderRadius: 24,
-    padding: 28,
+    backgroundColor: c.surface,
+    borderRadius: 20,
+    padding: 30,
     marginBottom: 28,
-    borderWidth: 1.5,
-    borderColor: '#FFD70040',
+    borderWidth: 1,
+    borderColor: c.border,
   },
-  heroIconCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: '#FFD70015',
-    borderWidth: 2,
-    borderColor: '#FFD70050',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 14,
-    elevation: 6,
+  heroEyebrow: {
+    fontSize: 11, fontWeight: '800', color: c.textDim,
+    textTransform: 'uppercase', letterSpacing: 2.4, marginBottom: 8,
   },
-  heroTitle: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 8, textAlign: 'center' },
-  heroSub: { fontSize: 14, color: '#888', textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  heroTitle: { fontSize: 32, fontWeight: '900', color: c.text, marginBottom: 10, textAlign: 'center', letterSpacing: -0.8 },
+  heroSub: { fontSize: 14, color: c.textDim, textAlign: 'center', lineHeight: 20, marginBottom: 22, fontWeight: '600' },
   activePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    backgroundColor: '#1DB954',
+    backgroundColor: c.accent,
     paddingHorizontal: 16,
     paddingVertical: 9,
-    borderRadius: 20,
+    borderRadius: 8,
   },
-  activePillText: { color: '#0A0A0A', fontSize: 13, fontWeight: '700' },
+  activePillText: { color: c.accentText, fontSize: 13, fontWeight: '800' },
   upgradeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFD700',
-    paddingHorizontal: 24,
+    backgroundColor: c.accent,
+    paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 14,
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    borderRadius: 10,
   },
-  upgradeBtnText: { color: '#000', fontSize: 16, fontWeight: '800' },
+  upgradeBtnText: { color: c.accentText, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
 
-  sectionTitle: { fontSize: 12, color: '#555', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14, marginTop: 4 },
+  sectionTitle: { fontSize: 11, color: c.textDim, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 14, marginTop: 4 },
 
   featureCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#161616',
-    borderRadius: 14,
+    backgroundColor: c.surface,
+    borderRadius: 12,
     padding: 14,
     marginBottom: 10,
     gap: 14,
+    borderWidth: 1,
+    borderColor: c.border,
   },
   featureIconBox: {
     width: 44,
     height: 44,
-    borderRadius: 12,
-    backgroundColor: '#FFD70015',
+    borderRadius: 10,
+    backgroundColor: c.elevated,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featureIconBoxFree: { backgroundColor: '#1DB95415' },
   featureInfo: { flex: 1 },
   featureTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
-  featureTitle: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  featureTitle: { fontSize: 14, fontWeight: '800', color: c.text },
   lockBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#FFD70020',
+    backgroundColor: c.elevated,
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 8,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: c.border,
   },
-  lockBadgeText: { fontSize: 9, color: '#FFD700', fontWeight: '700' },
-  featureDesc: { fontSize: 12, color: '#666', lineHeight: 17 },
+  lockBadgeText: { fontSize: 9, color: c.textDim, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  featureDesc: { fontSize: 12, color: c.textDim, lineHeight: 17, fontWeight: '600' },
 
   bigCta: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#FFD700',
+    backgroundColor: c.accent,
     paddingVertical: 16,
-    borderRadius: 16,
+    borderRadius: 12,
     marginBottom: 16,
-    shadowColor: '#FFD700',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
   },
-  bigCtaText: { color: '#000', fontSize: 17, fontWeight: '800' },
+  bigCtaText: { color: c.accentText, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 },
 
-  disclaimer: { color: '#444', fontSize: 11, textAlign: 'center', lineHeight: 18, marginBottom: 20 },
+  disclaimer: { color: c.textFaint, fontSize: 11, textAlign: 'center', lineHeight: 18, marginBottom: 20, fontWeight: '600' },
 });

@@ -43,6 +43,8 @@ const parseSongUrl = (data) => {
 
 export default function QRScannerScreen({ navigation }) {
   const { createPlaylist, addSongToPlaylist, loadAndPlay, addToSearchHistory } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [torch, setTorch] = useState(false);
@@ -145,7 +147,7 @@ export default function QRScannerScreen({ navigation }) {
         'Free members get one playlist. Upgrade to Premium to save shared playlists.',
         [
           { text: 'Not Now', style: 'cancel' },
-          { text: 'Go Premium 💎', onPress: () => navigation.navigate('Paywall') },
+          { text: 'Go Premium', onPress: () => navigation.navigate('Paywall') },
         ]
       );
       return;
@@ -172,7 +174,7 @@ export default function QRScannerScreen({ navigation }) {
   if (!permission.granted) {
     return (
       <View style={styles.permissionContainer}>
-        <Ionicons name="camera-off-outline" size={72} color="#555" />
+        <Ionicons name="camera-off-outline" size={72} color={c.textFaint} />
         <Text style={styles.permissionTitle}>Camera Access Required</Text>
         <Text style={styles.permissionText}>
           Allow camera access to scan Sonara QR codes and open playlists instantly.
@@ -200,13 +202,13 @@ export default function QRScannerScreen({ navigation }) {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
+            <Ionicons name="arrow-back" size={22} color={c.icon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Scan QR Code</Text>
           <TouchableOpacity
             style={[styles.headerBtn, torch && styles.headerBtnActive]}
             onPress={() => setTorch(t => !t)}>
-            <Ionicons name={torch ? 'flash' : 'flash-outline'} size={22} color="#fff" />
+            <Ionicons name={torch ? 'flash' : 'flash-outline'} size={22} color={c.icon} />
           </TouchableOpacity>
         </View>
 
@@ -232,7 +234,7 @@ export default function QRScannerScreen({ navigation }) {
 
               {scanned && (
                 <View style={styles.successMark}>
-                  <Ionicons name="checkmark-circle" size={56} color="#1DB954" />
+                  <Ionicons name="checkmark-circle" size={56} color={c.icon} />
                 </View>
               )}
             </View>
@@ -271,7 +273,7 @@ export default function QRScannerScreen({ navigation }) {
               </View>
 
               <TouchableOpacity style={styles.primaryBtn} onPress={playSong}>
-                <Ionicons name="play" size={18} color="#fff" style={{ marginRight: 8 }} />
+                <Ionicons name="play" size={18} color={c.icon} style={{ marginRight: 8 }} />
                 <Text style={styles.primaryBtnText}>Play Song</Text>
               </TouchableOpacity>
 
@@ -283,7 +285,7 @@ export default function QRScannerScreen({ navigation }) {
                 <Ionicons
                   name={songSaved ? 'checkmark-circle' : 'time-outline'}
                   size={17}
-                  color="#1DB954"
+                  color={c.icon}
                   style={{ marginRight: 8 }}
                 />
                 <Text style={styles.outlineBtnText}>
@@ -347,12 +349,12 @@ export default function QRScannerScreen({ navigation }) {
 
               {saved ? (
                 <View style={styles.savedRow}>
-                  <Ionicons name="checkmark-circle" size={22} color="#1DB954" />
+                  <Ionicons name="checkmark-circle" size={22} color={c.icon} />
                   <Text style={styles.savedText}>Saved to your library!</Text>
                 </View>
               ) : (
                 <TouchableOpacity style={styles.primaryBtn} onPress={savePlaylist}>
-                  <Ionicons name="add-circle-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                  <Ionicons name="add-circle-outline" size={18} color={c.icon} style={{ marginRight: 8 }} />
                   <Text style={styles.primaryBtnText}>Save Playlist</Text>
                 </TouchableOpacity>
               )}
@@ -368,7 +370,7 @@ export default function QRScannerScreen({ navigation }) {
             <>
               <View style={styles.sheetHandle} />
               <View style={styles.genericHeader}>
-                <Ionicons name="qr-code" size={28} color="#fff" />
+                <Ionicons name="qr-code" size={28} color={c.icon} />
                 <Text style={styles.genericTitle}>QR Code Detected</Text>
               </View>
               <View style={styles.genericContentBox}>
@@ -377,7 +379,7 @@ export default function QRScannerScreen({ navigation }) {
                 </Text>
               </View>
               <TouchableOpacity style={styles.primaryBtn} onPress={resetScan}>
-                <Ionicons name="scan-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                <Ionicons name="scan-outline" size={18} color={c.icon} style={{ marginRight: 8 }} />
                 <Text style={styles.primaryBtnText}>Scan Again</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.goBack()}>
@@ -391,24 +393,24 @@ export default function QRScannerScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   camera: { flex: 1 },
 
   // Permission
   permissionContainer: {
-    flex: 1, backgroundColor: '#0A0A0A',
+    flex: 1, backgroundColor: c.bg,
     alignItems: 'center', justifyContent: 'center', padding: 40, gap: 16,
   },
-  permissionTitle: { color: '#fff', fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  permissionText: { color: '#666', fontSize: 14, textAlign: 'center', lineHeight: 22 },
+  permissionTitle: { color: c.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  permissionText: { color: c.textFaint, fontSize: 14, textAlign: 'center', lineHeight: 22 },
   allowBtn: {
-    backgroundColor: '#1DB954', borderRadius: 30,
+    backgroundColor: c.accent, borderRadius: 30,
     paddingHorizontal: 32, paddingVertical: 14, marginTop: 8,
   },
-  allowBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  allowBtnText: { color: c.text, fontSize: 15, fontWeight: '800' },
   ghostBtn: { paddingVertical: 12, paddingHorizontal: 32 },
-  ghostBtnText: { color: '#555', fontSize: 14, fontWeight: '600' },
+  ghostBtnText: { color: c.textFaint, fontSize: 14, fontWeight: '600' },
 
   // Header
   header: {
@@ -421,8 +423,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.14)',
     alignItems: 'center', justifyContent: 'center',
   },
-  headerBtnActive: { backgroundColor: '#1DB954' },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  headerBtnActive: { backgroundColor: c.accent },
+  headerTitle: { color: c.text, fontSize: 18, fontWeight: '700' },
 
   // Viewfinder
   viewfinder: { flex: 1 },
@@ -435,32 +437,32 @@ const styles = StyleSheet.create({
   },
   hint: { color: '#ddd', fontSize: 14, textAlign: 'center', paddingHorizontal: 40 },
   sonaraBadge: {
-    backgroundColor: 'rgba(29,185,84,0.18)',
-    borderWidth: 1, borderColor: '#1DB954',
+    backgroundColor: c.elevated,
+    borderWidth: 1, borderColor: c.accent,
     paddingHorizontal: 22, paddingVertical: 8, borderRadius: 24,
   },
-  sonaraBadgeText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  sonaraBadgeText: { color: c.text, fontSize: 14, fontWeight: '700' },
 
   // Scan frame
   frame: { width: 260, height: 260, position: 'relative', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  frameSuccess: { backgroundColor: 'rgba(29,185,84,0.08)' },
-  corner: { position: 'absolute', width: 38, height: 38, borderColor: '#1DB954', borderWidth: 4 },
-  cornerGreen: { borderColor: '#1DB954' },
+  frameSuccess: { backgroundColor: c.elevated },
+  corner: { position: 'absolute', width: 38, height: 38, borderColor: c.accent, borderWidth: 4 },
+  cornerGreen: { borderColor: c.accent },
   tl: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius: 8 },
   tr: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0, borderTopRightRadius: 8 },
   bl: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0, borderBottomLeftRadius: 8 },
   br: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0, borderBottomRightRadius: 8 },
   scanLine: {
     position: 'absolute', top: 0, left: 12, right: 12,
-    height: 2, backgroundColor: '#1DB954', borderRadius: 1,
-    shadowColor: '#1DB954', shadowOpacity: 0.8, shadowRadius: 4,
+    height: 2, backgroundColor: c.accent, borderRadius: 1,
+    shadowColor: c.bg, shadowOpacity: 0.8, shadowRadius: 4,
   },
   successMark: { alignItems: 'center', justifyContent: 'center' },
 
   // Bottom sheet
   sheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#111', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    backgroundColor: c.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12,
     minHeight: 320,
   },
@@ -472,73 +474,73 @@ const styles = StyleSheet.create({
   // Song sheet
   songArtWrap: {
     width: 60, height: 60, borderRadius: 14,
-    backgroundColor: 'rgba(29,185,84,0.14)',
+    backgroundColor: c.elevated,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(29,185,84,0.25)',
+    borderWidth: 1, borderColor: c.border,
   },
   songArtEmoji: { fontSize: 30 },
-  songFoundLabel: { color: '#1DB954', fontSize: 11, fontWeight: '800', letterSpacing: 1.4, marginBottom: 4 },
-  songTitle: { color: '#fff', fontSize: 19, fontWeight: '900', letterSpacing: -0.3, marginBottom: 4 },
-  songArtist: { color: '#9A9A9A', fontSize: 14, fontWeight: '600', marginTop: 3 },
+  songFoundLabel: { color: c.text, fontSize: 11, fontWeight: '800', letterSpacing: 1.4, marginBottom: 4 },
+  songTitle: { color: c.text, fontSize: 19, fontWeight: '900', letterSpacing: -0.3, marginBottom: 4 },
+  songArtist: { color: c.textDim, fontSize: 14, fontWeight: '600', marginTop: 3 },
   outlineBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(29,185,84,0.10)', borderRadius: 30,
+    backgroundColor: c.elevated, borderRadius: 30,
     paddingVertical: 13, width: '100%', marginTop: 8,
-    borderWidth: 1, borderColor: 'rgba(29,185,84,0.45)',
+    borderWidth: 1, borderColor: c.border,
   },
-  outlineBtnDone: { backgroundColor: 'rgba(29,185,84,0.16)' },
-  outlineBtnText: { color: '#1DB954', fontSize: 14, fontWeight: '800' },
+  outlineBtnDone: { backgroundColor: c.elevated },
+  outlineBtnText: { color: c.text, fontSize: 14, fontWeight: '800' },
 
   // Playlist sheet
   sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginBottom: 20 },
   playlistIconWrap: {
     width: 56, height: 56, borderRadius: 14,
-    backgroundColor: 'rgba(29,185,84,0.14)',
+    backgroundColor: c.elevated,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(29,185,84,0.25)',
+    borderWidth: 1, borderColor: c.border,
   },
   playlistIconEmoji: { fontSize: 28 },
   sheetHeaderInfo: { flex: 1 },
-  playlistName: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  playlistCreator: { color: '#888', fontSize: 13, marginTop: 3 },
-  playlistCount: { color: '#1DB954', fontSize: 12, fontWeight: '600', marginTop: 4 },
+  playlistName: { color: c.text, fontSize: 18, fontWeight: '800' },
+  playlistCreator: { color: c.textDim, fontSize: 13, marginTop: 3 },
+  playlistCount: { color: c.text, fontSize: 12, fontWeight: '600', marginTop: 4 },
 
   // Song previews
   songPreviewList: { marginBottom: 20 },
   songPreviewRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1C1C1C',
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border,
   },
   songPreviewNum: {
     width: 26, height: 26, borderRadius: 13,
-    backgroundColor: '#1C1C1C', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
   },
-  songPreviewNumText: { color: '#555', fontSize: 11, fontWeight: '700' },
+  songPreviewNumText: { color: c.textFaint, fontSize: 11, fontWeight: '700' },
   songPreviewInfo: { flex: 1 },
-  songPreviewTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  songPreviewArtist: { color: '#666', fontSize: 11, marginTop: 2 },
+  songPreviewTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
+  songPreviewArtist: { color: c.textFaint, fontSize: 11, marginTop: 2 },
   songPreviewEmoji: { fontSize: 20 },
-  moreSongs: { color: '#555', fontSize: 12, textAlign: 'center', marginTop: 10 },
+  moreSongs: { color: c.textFaint, fontSize: 12, textAlign: 'center', marginTop: 10 },
 
   savedRow: { flexDirection: 'row', alignItems: 'center', gap: 10, justifyContent: 'center', marginBottom: 8 },
-  savedText: { color: '#1DB954', fontSize: 15, fontWeight: '700' },
+  savedText: { color: c.text, fontSize: 15, fontWeight: '700' },
 
   // Generic sheet
   genericHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  genericTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  genericTitle: { color: c.text, fontSize: 18, fontWeight: '800' },
   genericContentBox: {
-    backgroundColor: '#1A1A1A', borderRadius: 12,
+    backgroundColor: c.elevated, borderRadius: 12,
     padding: 14, marginBottom: 20,
   },
-  genericContent: { color: '#aaa', fontSize: 13, lineHeight: 20 },
+  genericContent: { color: c.textDim, fontSize: 13, lineHeight: 20 },
 
   // Buttons
   primaryBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#1DB954', borderRadius: 30,
+    backgroundColor: c.accent, borderRadius: 30,
     paddingVertical: 14, width: '100%', marginBottom: 8,
   },
-  primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  primaryBtnText: { color: c.accentText, fontSize: 15, fontWeight: '800' },
   secondaryBtn: { paddingVertical: 12, width: '100%', alignItems: 'center' },
-  secondaryBtnText: { color: '#555', fontSize: 14, fontWeight: '600' },
+  secondaryBtnText: { color: c.textFaint, fontSize: 14, fontWeight: '600' },
 });

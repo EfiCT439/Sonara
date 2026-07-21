@@ -5,11 +5,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
+import { useArtwork, useArtistImage } from '../../services/artwork';
 
 const GENRES = ['All', 'Afrobeats', 'Hip Hop', 'Pop', 'R&B', 'Soul', 'Gospel', 'Amapiano'];
 
 const GENRE_COLORS = {
-  All: '#1DB954', Afrobeats: '#FF6B35', 'Hip Hop': '#9B59B6', Pop: '#E91E63',
+  All: '#888', Afrobeats: '#FF6B35', 'Hip Hop': '#9B59B6', Pop: '#E91E63',
   'R&B': '#3498DB', Soul: '#E67E22', Gospel: '#2ECC71', Amapiano: '#1ABC9C',
 };
 
@@ -182,13 +183,16 @@ function getGreeting() {
   return { text: 'Good Evening', icon: 'moon-outline' };
 }
 
-function SongCard({ item, onPress }) {
+function SongCard({ styles, c, item, onPress }) {
+  const art = useArtwork(item);
   return (
     <TouchableOpacity style={styles.songCard} onPress={onPress} activeOpacity={0.75}>
       <View style={styles.songArt}>
-        <Text style={styles.songEmoji}>{item.emoji}</Text>
+        {art
+          ? <Image source={{ uri: art }} style={styles.songArtImg} />
+          : <Text style={styles.songEmoji}>{item.emoji}</Text>}
         <View style={styles.playOverlay}>
-          <Ionicons name="play" size={14} color="#fff" />
+          <Ionicons name="play" size={14} color={c.icon} />
         </View>
       </View>
       <Text style={styles.songCardTitle} numberOfLines={1}>{item.title}</Text>
@@ -197,11 +201,28 @@ function SongCard({ item, onPress }) {
   );
 }
 
-function ArtistChip({ item, onPress }) {
+function RecentCard({ styles, c, item, onPress }) {
+  const art = useArtwork(item);
+  return (
+    <TouchableOpacity style={styles.recentCard} onPress={onPress} activeOpacity={0.75}>
+      <View style={styles.recentArt}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.recentArtImg} />
+          : <Text style={styles.recentEmoji}>{item.emoji}</Text>}
+      </View>
+      <Text style={styles.recentTitle} numberOfLines={1}>{item.title}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function ArtistChip({ styles, c, item, onPress }) {
+  const photo = useArtistImage(item);
   return (
     <TouchableOpacity style={styles.artistChip} onPress={onPress} activeOpacity={0.75}>
       <View style={styles.artistCircle}>
-        <Text style={styles.artistEmoji}>{item.emoji}</Text>
+        {photo
+          ? <Image source={{ uri: photo }} style={styles.artistCircleImg} />
+          : <Text style={styles.artistEmoji}>{item.emoji}</Text>}
       </View>
       <Text style={styles.artistName} numberOfLines={1}>{item.name}</Text>
       <Text style={styles.artistGenre} numberOfLines={1}>{item.genre}</Text>
@@ -211,13 +232,16 @@ function ArtistChip({ item, onPress }) {
 
 const MFY_CELL_BG = ['#111', '#181818', '#181818', '#111'];
 
-function MadeForYouCard({ playlist, onPress }) {
+function MadeForYouCard({ styles, c, playlist, onPress }) {
+  const cover = useArtwork(playlist.songs?.[0]);
   const songEmojis = playlist.songs.slice(0, 4).map(s => s.emoji);
   const hasFour = songEmojis.length >= 4;
   return (
     <TouchableOpacity style={styles.mfyCard} onPress={() => onPress(playlist)} activeOpacity={0.75}>
       <View style={styles.mfyArt}>
-        {hasFour ? (
+        {cover ? (
+          <Image source={{ uri: cover }} style={styles.mfyCoverImg} />
+        ) : hasFour ? (
           <View style={styles.mfyGrid}>
             {songEmojis.map((emoji, i) => (
               <View key={i} style={[styles.mfyGridCell, { backgroundColor: MFY_CELL_BG[i] }]}>
@@ -229,7 +253,7 @@ function MadeForYouCard({ playlist, onPress }) {
           <Text style={styles.mfySingleEmoji}>{playlist.emoji}</Text>
         )}
         <View style={styles.mfyPlayBtn}>
-          <Ionicons name="play" size={13} color="#fff" />
+          <Ionicons name="play" size={13} color={c.icon} />
         </View>
       </View>
       <Text style={styles.mfyTitle} numberOfLines={1}>{playlist.name}</Text>
@@ -245,6 +269,8 @@ export default function HomeScreen({ navigation }) {
     recentlyPlayed, loadAndPlay,
     listeningHabits, getTopGenres, getTopArtists,
   } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
 
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -487,7 +513,7 @@ export default function HomeScreen({ navigation }) {
         <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
           <View>
             <View style={styles.greetingRow}>
-              <Ionicons name={greetingIcon} size={15} color="#555" />
+              <Ionicons name={greetingIcon} size={15} color={c.textFaint} />
               <Text style={styles.greeting}>{greetingText}</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Premium')} activeOpacity={0.8}>
@@ -495,7 +521,7 @@ export default function HomeScreen({ navigation }) {
                 <Ionicons
                   name={isPremium ? 'diamond' : 'musical-note-outline'}
                   size={11}
-                  color={isPremium ? '#000' : '#555'}
+                  color={isPremium ? c.accentText : c.textFaint}
                 />
                 <Text style={[styles.planText, isPremium && styles.planTextPremium]}>
                   {isPremium ? 'Premium' : 'Free Plan'}
@@ -508,7 +534,7 @@ export default function HomeScreen({ navigation }) {
             <TouchableOpacity
               style={styles.iconBtn}
               onPress={() => { setShowNotifications(true); markAllNotificationsRead(); }}>
-              <Ionicons name="notifications-outline" size={22} color="#aaa" />
+              <Ionicons name="notifications-outline" size={22} color={c.textDim} />
               {unreadCount > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -519,7 +545,7 @@ export default function HomeScreen({ navigation }) {
             <TouchableOpacity style={styles.avatar} onPress={() => navigation.navigate('Profile')} activeOpacity={0.85}>
               {profileImage
                 ? <Image source={{ uri: profileImage }} style={styles.avatarImg} />
-                : <Ionicons name="person" size={20} color="#aaa" />}
+                : <Ionicons name="person" size={20} color={c.textDim} />}
               {isPremium && <View style={styles.premiumDot} />}
             </TouchableOpacity>
           </View>
@@ -570,7 +596,7 @@ export default function HomeScreen({ navigation }) {
             keyExtractor={item => item.id}
             contentContainerStyle={{ paddingLeft: 20, paddingRight: 8 }}
             renderItem={({ item, index }) => (
-              <SongCard
+              <SongCard styles={styles} c={c}
                 item={item}
                 onPress={() => openPlayer(item, trendingSongs, index)}
               />
@@ -599,7 +625,7 @@ export default function HomeScreen({ navigation }) {
             keyExtractor={item => item.id}
             contentContainerStyle={{ paddingLeft: 20, paddingRight: 8 }}
             renderItem={({ item }) => (
-              <MadeForYouCard playlist={item} onPress={openPlaylist} />
+              <MadeForYouCard styles={styles} c={c} playlist={item} onPress={openPlaylist} />
             )}
           />
         </View>
@@ -609,20 +635,15 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Recently Played</Text>
-              <Ionicons name="time-outline" size={14} color="#444" />
+              <Ionicons name="time-outline" size={14} color={c.textFaint} />
             </View>
             <View style={styles.recentGrid}>
               {recentlyPlayed.slice(0, 5).map((item, index) => (
-                <TouchableOpacity
+                <RecentCard styles={styles} c={c}
                   key={`recent_${item.id}_${index}`}
-                  style={styles.recentCard}
+                  item={item}
                   onPress={() => openPlayer(item, recentlyPlayed.slice(0, 5), index)}
-                  activeOpacity={0.75}>
-                  <View style={styles.recentArt}>
-                    <Text style={styles.recentEmoji}>{item.emoji}</Text>
-                  </View>
-                  <Text style={styles.recentTitle} numberOfLines={1}>{item.title}</Text>
-                </TouchableOpacity>
+                />
               ))}
             </View>
           </View>
@@ -644,7 +665,7 @@ export default function HomeScreen({ navigation }) {
               keyExtractor={item => item.id}
               contentContainerStyle={{ paddingLeft: 20, paddingRight: 8, gap: 16 }}
               renderItem={({ item }) => (
-                <ArtistChip
+                <ArtistChip styles={styles} c={c}
                   item={item}
                   onPress={() => navigation.navigate('Artist', { artist: item })}
                 />
@@ -676,7 +697,7 @@ export default function HomeScreen({ navigation }) {
             keyExtractor={item => item.id}
             contentContainerStyle={{ paddingLeft: 20, paddingRight: 8 }}
             renderItem={({ item, index }) => (
-              <SongCard
+              <SongCard styles={styles} c={c}
                 item={item}
                 onPress={() => openPlayer(item, personalRecs, index)}
               />
@@ -701,7 +722,7 @@ export default function HomeScreen({ navigation }) {
             keyExtractor={item => item.id}
             contentContainerStyle={{ paddingLeft: 20, paddingRight: 8 }}
             renderItem={({ item, index }) => (
-              <SongCard
+              <SongCard styles={styles} c={c}
                 item={item}
                 onPress={() => openPlayer(item, newForYou, index)}
               />
@@ -733,7 +754,7 @@ export default function HomeScreen({ navigation }) {
             keyExtractor={item => item.id}
             contentContainerStyle={{ paddingLeft: 20, paddingRight: 8, gap: 16 }}
             renderItem={({ item }) => (
-              <ArtistChip
+              <ArtistChip styles={styles} c={c}
                 item={item}
                 onPress={() => navigation.navigate('Artist', { artist: item })}
               />
@@ -753,7 +774,7 @@ export default function HomeScreen({ navigation }) {
             {detailMix && (
               <>
                 <View style={styles.mixHead}>
-                  <View style={[styles.mixHeadArt, { backgroundColor: (GENRE_COLORS[detailMix.songs[0]?.genre] || '#1DB954') + '25' }]}>
+                  <View style={[styles.mixHeadArt, { backgroundColor: (GENRE_COLORS[detailMix.songs[0]?.genre] || '#888') + '25' }]}>
                     <Text style={styles.mixHeadEmoji}>{detailMix.emoji || '🎵'}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
@@ -764,12 +785,12 @@ export default function HomeScreen({ navigation }) {
                     </Text>
                   </View>
                   <TouchableOpacity onPress={() => setDetailMix(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    <Ionicons name="close" size={22} color="#555" />
+                    <Ionicons name="close" size={22} color={c.textFaint} />
                   </TouchableOpacity>
                 </View>
 
                 <TouchableOpacity style={styles.mixPlayAll} onPress={playMixAll} activeOpacity={0.85}>
-                  <Ionicons name="play" size={16} color="#000" />
+                  <Ionicons name="play" size={16} color={c.accentText} />
                   <Text style={styles.mixPlayAllText}>Play All</Text>
                 </TouchableOpacity>
 
@@ -788,7 +809,7 @@ export default function HomeScreen({ navigation }) {
                         <Text style={styles.mixSongTitle} numberOfLines={1}>{song.title}</Text>
                         <Text style={styles.mixSongArtist} numberOfLines={1}>{song.artist} · {song.genre}</Text>
                       </View>
-                      <Ionicons name="play-circle-outline" size={24} color="#555" />
+                      <Ionicons name="play-circle-outline" size={24} color={c.textFaint} />
                     </TouchableOpacity>
                   ))}
                   <View style={{ height: 20 }} />
@@ -807,7 +828,7 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.sheetHead}>
               <Text style={styles.sheetTitle}>Notifications</Text>
               <TouchableOpacity onPress={() => setShowNotifications(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close" size={22} color="#555" />
+                <Ionicons name="close" size={22} color={c.textFaint} />
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -816,7 +837,7 @@ export default function HomeScreen({ navigation }) {
                   key={n.id}
                   style={[styles.notifItem, !n.read && styles.notifUnread]}>
                   <View style={styles.notifIcon}>
-                    <Ionicons name="musical-notes" size={18} color="#aaa" />
+                    <Ionicons name="musical-notes" size={18} color={c.textDim} />
                   </View>
                   <View style={styles.notifBody}>
                     <Text style={styles.notifTitle}>{n.title}</Text>
@@ -835,9 +856,9 @@ export default function HomeScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  stickyHeader: { backgroundColor: '#000', paddingTop: 56, zIndex: 10 },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
+  stickyHeader: { backgroundColor: c.bg, paddingTop: 56, zIndex: 10 },
 
   header: {
     flexDirection: 'row',
@@ -847,13 +868,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   greetingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  greeting: { fontSize: 13, color: '#555' },
+  greeting: { fontSize: 13, color: c.textFaint },
 
   planBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 20,
@@ -861,15 +882,15 @@ const styles = StyleSheet.create({
     borderColor: '#222',
     alignSelf: 'flex-start',
   },
-  planBadgePremium: { backgroundColor: '#fff', borderColor: '#fff' },
-  planText: { color: '#555', fontSize: 12, fontWeight: '700' },
-  planTextPremium: { color: '#000' },
+  planBadgePremium: { backgroundColor: c.accent, borderColor: c.accent },
+  planText: { color: c.textFaint, fontSize: 12, fontWeight: '700' },
+  planTextPremium: { color: c.accentText },
 
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   iconBtn: {
     width: 42,
     height: 42,
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
@@ -886,22 +907,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#000',
+    borderColor: c.bg,
     paddingHorizontal: 3,
   },
-  badgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  badgeText: { color: c.text, fontSize: 9, fontWeight: '800' },
 
   avatar: {
     width: 42,
     height: 42,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: c.borderStrong,
   },
   avatarImg: { width: 42, height: 42, borderRadius: 21 },
   premiumDot: {
@@ -910,10 +931,10 @@ const styles = StyleSheet.create({
     right: 0,
     width: 12,
     height: 12,
-    backgroundColor: '#fff',
+    backgroundColor: c.accent,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: '#000',
+    borderColor: c.bg,
   },
 
   genreList: { marginBottom: 14 },
@@ -921,13 +942,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     borderWidth: 1,
     borderColor: '#222',
   },
-  genreChipActive: { backgroundColor: '#fff', borderColor: '#fff' },
-  genreChipText: { color: '#555', fontSize: 13, fontWeight: '700' },
-  genreChipTextActive: { color: '#000' },
+  genreChipActive: { backgroundColor: c.accent, borderColor: c.accent },
+  genreChipText: { color: c.textFaint, fontSize: 13, fontWeight: '700' },
+  genreChipTextActive: { color: c.accentText },
 
   section: { marginBottom: 30 },
   sectionHeader: {
@@ -937,32 +958,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 14,
   },
-  sectionTitle: { fontSize: 17, fontWeight: '800', color: '#fff' },
-  sectionSubtitle: { fontSize: 12, color: '#444', marginTop: 2 },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: c.text },
+  sectionSubtitle: { fontSize: 12, color: c.textFaint, marginTop: 2 },
   sectionDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#333' },
-  seeAll: { color: '#888', fontSize: 13, fontWeight: '600' },
+  seeAll: { color: c.textDim, fontSize: 13, fontWeight: '600' },
 
   labelPill: {
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#222',
   },
-  labelPillText: { color: '#555', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  labelPillText: { color: c.textFaint, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
 
   songCard: { width: 140, marginRight: 12 },
   songArt: {
     width: 140,
     height: 140,
     borderRadius: 14,
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
     position: 'relative',
+    overflow: 'hidden',
   },
+  songArtImg: { ...StyleSheet.absoluteFillObject, width: 140, height: 140 },
   songEmoji: { fontSize: 52 },
   playOverlay: {
     position: 'absolute',
@@ -975,43 +998,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  songCardTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  songCardArtist: { color: '#555', fontSize: 11, marginTop: 2 },
+  songCardTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
+  songCardArtist: { color: c.textFaint, fontSize: 11, marginTop: 2 },
 
   recentGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 10 },
   recentCard: {
     width: '47%',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     borderRadius: 12,
     overflow: 'hidden',
   },
   recentArt: {
     width: 54,
     height: 54,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  recentArtImg: { width: '100%', height: '100%' },
   recentEmoji: { fontSize: 24 },
-  recentTitle: { color: '#fff', fontSize: 12, fontWeight: '700', flex: 1, paddingHorizontal: 10 },
+  recentTitle: { color: c.text, fontSize: 12, fontWeight: '700', flex: 1, paddingHorizontal: 10 },
 
   artistChip: { alignItems: 'center', width: 82 },
   artistCircle: {
     width: 76,
     height: 76,
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#222',
+    overflow: 'hidden',
   },
+  artistCircleImg: { width: '100%', height: '100%' },
   artistEmoji: { fontSize: 34 },
-  artistName: { color: '#fff', fontSize: 11, fontWeight: '700', textAlign: 'center' },
-  artistGenre: { color: '#444', fontSize: 10, textAlign: 'center', marginTop: 2 },
+  artistName: { color: c.text, fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  artistGenre: { color: c.textFaint, fontSize: 10, textAlign: 'center', marginTop: 2 },
 
   // Made For You — mix detail sheet
   mixHead: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 },
@@ -1020,23 +1047,23 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   mixHeadEmoji: { fontSize: 30 },
-  mixHeadName: { color: '#fff', fontSize: 19, fontWeight: '900', letterSpacing: -0.3 },
-  mixHeadSub: { color: '#888', fontSize: 12, fontWeight: '600', marginTop: 3 },
-  mixHeadCount: { color: '#555', fontSize: 11, fontWeight: '700', marginTop: 4 },
+  mixHeadName: { color: c.text, fontSize: 19, fontWeight: '900', letterSpacing: -0.3 },
+  mixHeadSub: { color: c.textDim, fontSize: 12, fontWeight: '600', marginTop: 3 },
+  mixHeadCount: { color: c.textFaint, fontSize: 11, fontWeight: '700', marginTop: 4 },
   mixPlayAll: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#fff', paddingVertical: 13, borderRadius: 12, marginBottom: 10,
+    backgroundColor: c.accent, paddingVertical: 13, borderRadius: 12, marginBottom: 10,
   },
-  mixPlayAllText: { color: '#000', fontSize: 15, fontWeight: '900', letterSpacing: -0.2 },
+  mixPlayAllText: { color: c.accentText, fontSize: 15, fontWeight: '900', letterSpacing: -0.2 },
   mixSongRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-  mixSongIdx: { color: '#666', fontSize: 13, fontWeight: '800', width: 20, textAlign: 'center' },
+  mixSongIdx: { color: c.textFaint, fontSize: 13, fontWeight: '800', width: 20, textAlign: 'center' },
   mixSongArt: {
     width: 46, height: 46, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
   mixSongEmoji: { fontSize: 22 },
-  mixSongTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  mixSongArtist: { color: '#666', fontSize: 12, fontWeight: '600', marginTop: 2 },
+  mixSongTitle: { color: c.text, fontSize: 15, fontWeight: '700' },
+  mixSongArtist: { color: c.textFaint, fontSize: 12, fontWeight: '600', marginTop: 2 },
 
   // Made For You card
   mfyCard: { width: 150, marginRight: 12 },
@@ -1044,13 +1071,14 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     borderRadius: 14,
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
     position: 'relative',
     overflow: 'hidden',
   },
+  mfyCoverImg: { ...StyleSheet.absoluteFillObject, width: 150, height: 150 },
   mfyGrid: {
     width: '100%',
     height: '100%',
@@ -1072,16 +1100,16 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#2A2A2A',
+    backgroundColor: c.elevated,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  mfyTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  mfyDesc: { color: '#444', fontSize: 11, marginTop: 2 },
+  mfyTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
+  mfyDesc: { color: c.textFaint, fontSize: 11, marginTop: 2 },
 
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
@@ -1089,18 +1117,18 @@ const styles = StyleSheet.create({
   },
   sheetHandle: { width: 36, height: 3, backgroundColor: '#222', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: c.text },
 
   notifItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
     gap: 12,
   },
-  notifUnread: { backgroundColor: '#161616', borderWidth: 1, borderColor: '#2A2A2A' },
+  notifUnread: { backgroundColor: c.surface, borderWidth: 1, borderColor: c.borderStrong },
   notifIcon: {
     width: 38,
     height: 38,
@@ -1110,8 +1138,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   notifBody: { flex: 1 },
-  notifTitle: { color: '#fff', fontSize: 13, fontWeight: '700', marginBottom: 3 },
-  notifMsg: { color: '#666', fontSize: 12, lineHeight: 17 },
-  notifTime: { color: '#333', fontSize: 10, marginTop: 4 },
+  notifTitle: { color: c.text, fontSize: 13, fontWeight: '700', marginBottom: 3 },
+  notifMsg: { color: c.textFaint, fontSize: 12, lineHeight: 17 },
+  notifTime: { color: c.textFaint, fontSize: 10, marginTop: 4 },
   unreadDot: { width: 7, height: 7, backgroundColor: '#555', borderRadius: 4, marginTop: 4 },
 });

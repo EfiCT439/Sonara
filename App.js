@@ -20,7 +20,6 @@ import ProfileScreen from './components/screens/ProfileScreen';
 import QRScannerScreen from './components/screens/QRScannerScreen';
 import AIGenScreen from './components/screens/AIGenScreen';
 import AIPlaylistScreen from './components/screens/AIPlaylistScreen';
-import AILyricsScreen from './components/screens/AILyricsScreen';
 import VisualizerScreen from './components/screens/VisualizerScreen';
 import MiniPlayer from './components/MiniPlayer';
 import { UserProvider, useUser } from './context/UserContext';
@@ -29,20 +28,21 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function MainTabs() {
+  const { colors: c } = useUser();
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0A0A0A',
-          borderTopColor: '#1A1A1A',
+          backgroundColor: c.bg,
+          borderTopColor: c.border,
           borderTopWidth: 1,
           paddingBottom: 5,
           paddingTop: 5,
           height: 60,
         },
-        tabBarActiveTintColor: '#1DB954',
-        tabBarInactiveTintColor: '#888',
+        tabBarActiveTintColor: c.text,
+        tabBarInactiveTintColor: c.textDim,
         tabBarLabelStyle: { fontSize: 10, fontWeight: 'bold' },
       }}>
       <Tab.Screen name="Home" component={HomeScreen}
@@ -61,7 +61,7 @@ function MainTabs() {
 
 function AppContent() {
   const navigationRef = useNavigationContainerRef();
-  const { currentTrack, isPlayerOpen } = useUser();
+  const { currentTrack, isPlayerOpen, colors: c } = useUser();
 
   // Keep the whole app in portrait; the Player's video fullscreen is the only
   // place that switches to landscape (and restores portrait on exit).
@@ -88,7 +88,7 @@ function AppContent() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0A0A0A' }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
       <NavigationContainer ref={navigationRef}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Login" component={LoginScreen} />
@@ -115,7 +115,6 @@ function MainInner() {
       <Stack.Screen name="QRScanner" component={QRScannerScreen} />
       <Stack.Screen name="AIGen" component={AIGenScreen} />
       <Stack.Screen name="AIPlaylist" component={AIPlaylistScreen} />
-      <Stack.Screen name="AILyrics" component={AILyricsScreen} />
       <Stack.Screen name="Visualizer" component={VisualizerScreen} />
     </Stack.Navigator>
   );

@@ -5,12 +5,22 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
+import { useArtwork } from '../../services/artwork';
 
 const EMOJIS = ['🎵', '🎶', '🎸', '🎹', '🎺', '🎻', '🎤', '🎧', '❤️', '🔥', '⚡', '🌙', '🌊', '🦋', '🎯', '✨'];
 
+// Renders a song's real cover art (via iTunes) with an emoji fallback. A component
+// so the hook can be used inside the inline song maps below.
+function SongThumb({ song, imgStyle, emojiStyle }) {
+  const art = useArtwork(song);
+  return art
+    ? <Image source={{ uri: art }} style={imgStyle} />
+    : <Text style={emojiStyle}>{song.emoji || '🎵'}</Text>;
+}
+
 // ─── Module-scope components (keyboard-bug rule) ─────────────────────────────
 
-function SectionHeader({ title }) {
+function SectionHeader({ styles, c, title }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionHeaderText}>{title}</Text>
@@ -18,11 +28,11 @@ function SectionHeader({ title }) {
   );
 }
 
-function CreateRow({ icon, title, sub, locked, comingSoon, onPress }) {
+function CreateRow({ styles, c, icon, title, sub, locked, comingSoon, onPress }) {
   return (
     <TouchableOpacity style={styles.createRow} onPress={onPress} activeOpacity={0.75}>
       <View style={[styles.createRowIcon, locked && styles.createRowIconMuted]}>
-        <Ionicons name={icon} size={24} color={locked ? '#3A3A3A' : '#ccc'} />
+        <Ionicons name={icon} size={24} color={locked ? c.textFaint : c.textDim} />
       </View>
       <View style={styles.createRowInfo}>
         <Text style={[styles.createRowTitle, (locked || comingSoon) && styles.createRowTitleMuted]}>
@@ -32,7 +42,7 @@ function CreateRow({ icon, title, sub, locked, comingSoon, onPress }) {
       </View>
       {locked ? (
         <View style={styles.lockBadge}>
-          <Ionicons name="lock-closed" size={9} color="#444" />
+          <Ionicons name="lock-closed" size={9} color={c.textFaint} />
           <Text style={styles.lockText}>Premium</Text>
         </View>
       ) : comingSoon ? (
@@ -40,13 +50,13 @@ function CreateRow({ icon, title, sub, locked, comingSoon, onPress }) {
           <Text style={styles.soonText}>Soon</Text>
         </View>
       ) : (
-        <Ionicons name="chevron-forward" size={15} color="#222" />
+        <Ionicons name="chevron-forward" size={15} color={c.textFaint} />
       )}
     </TouchableOpacity>
   );
 }
 
-function MyPlaylistRow({ playlist, onPress }) {
+function MyPlaylistRow({ styles, c, playlist, onPress }) {
   return (
     <TouchableOpacity style={styles.createRow} onPress={onPress} activeOpacity={0.75}>
       <View style={styles.playlistArt}>
@@ -60,7 +70,7 @@ function MyPlaylistRow({ playlist, onPress }) {
           {playlist.songs?.length || 0} {(playlist.songs?.length || 0) === 1 ? 'song' : 'songs'}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={17} color="#555" />
+      <Ionicons name="chevron-forward" size={17} color={c.textFaint} />
     </TouchableOpacity>
   );
 }
@@ -69,9 +79,13 @@ function MyPlaylistRow({ playlist, onPress }) {
 
 export default function CreateScreen({ navigation }) {
   const {
-    isPremium, createPlaylist, userPlaylists, updatePlaylist, loadAndPlay,
+    isPremium, createPlaylist, createGeneratedPlaylist, userPlaylists, updatePlaylist, loadAndPlay,
     canCreatePlaylist, customPlaylistCount, FREE_SONGS_PER_PLAYLIST, createdSongs,
+    deletePlaylist, addSongToPlaylist, removeSongFromPlaylist, canAddSongToPlaylist,
+    likedSongs, recentlyPlayed, downloadedSongs,
   } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
 
   const myPlaylists = userPlaylists.filter(pl => !pl.isLikedSongs);
 
@@ -87,6 +101,7 @@ export default function CreateScreen({ navigation }) {
   const [editTarget, setEditTarget] = useState(null);
   const [editName, setEditName] = useState('');
   const [editEmoji, setEditEmoji] = useState('🎵');
+  const [editAddMode, setEditAddMode] = useState(false); // song-picker sub-view inside edit
 
   // Share flow
   const [showShareModal, setShowShareModal] = useState(false);
@@ -101,7 +116,7 @@ export default function CreateScreen({ navigation }) {
   const promptUpgrade = (title, message) => {
     Alert.alert(title, message, [
       { text: 'Not Now', style: 'cancel' },
-      { text: 'Go Premium 💎', onPress: () => navigation.navigate('Premium') },
+      { text: 'Go Premium', onPress: () => navigation.navigate('Premium') },
     ]);
   };
 
@@ -120,13 +135,9 @@ export default function CreateScreen({ navigation }) {
   };
 
   const handleCollaborative = () => {
-    if (!canCreatePlaylist()) {
-      promptUpgrade(
-        'Playlist Limit Reached',
-        'Free members get one playlist. Upgrade to Premium for unlimited playlists.'
-      );
-      return;
-    }
+    // Collaborative playlists are free for everyone — no playlist-cap gate here.
+    // handleSave routes the collab path through createGeneratedPlaylist, which
+    // bypasses the free 1-playlist limit.
     setCollabIntent(true);
     setPlaylistName('');
     setSelectedEmoji('🎵');
@@ -138,10 +149,21 @@ export default function CreateScreen({ navigation }) {
       Alert.alert('Name Required', 'Please give your playlist a name.');
       return;
     }
+    // Collaborative playlists are unlocked for free users, so they bypass the free
+    // 1-playlist cap via createGeneratedPlaylist. Regular playlists still respect it.
+    if (collabIntent) {
+      const pl = createGeneratedPlaylist(playlistName.trim(), selectedEmoji, []);
+      setShowModal(false);
+      setCollabIntent(false);
+      Alert.alert(
+        'Collaborative Playlist Created',
+        `"${pl.name}" is ready. Add songs, then use Share to invite friends to listen and add to it.`
+      );
+      return;
+    }
     const pl = createPlaylist(playlistName.trim(), selectedEmoji);
     if (!pl) {
       setShowModal(false);
-      setCollabIntent(false);
       promptUpgrade(
         'Playlist Limit Reached',
         'Free members get one playlist. Upgrade to Premium for unlimited playlists.'
@@ -149,16 +171,8 @@ export default function CreateScreen({ navigation }) {
       return;
     }
     setShowModal(false);
-    if (collabIntent) {
-      setCollabIntent(false);
-      Alert.alert(
-        'Collaborative Playlist Created 🎉',
-        `"${pl.name}" is ready. Add songs, then use Share to invite friends to listen and add to it.`
-      );
-      return;
-    }
     Alert.alert(
-      'Playlist Created 🎉',
+      'Playlist Created',
       isPremium
         ? `"${pl.name}" is ready. Add songs to it from any Player screen.`
         : `"${pl.name}" is ready — add up to ${FREE_SONGS_PER_PLAYLIST} songs from the Player screen. Upgrade to Premium for unlimited songs and playlists.`
@@ -257,6 +271,7 @@ export default function CreateScreen({ navigation }) {
     setEditTarget(playlist);
     setEditName(playlist.name);
     setEditEmoji(playlist.emoji);
+    setEditAddMode(false);
   };
 
   const handleSaveEdit = () => {
@@ -267,6 +282,39 @@ export default function CreateScreen({ navigation }) {
     updatePlaylist(editTarget.id, editName.trim(), editEmoji);
     setShowEditModal(false);
     setEditTarget(null);
+    setEditAddMode(false);
+  };
+
+  const closeEdit = () => { setShowEditModal(false); setEditTarget(null); setEditAddMode(false); };
+
+  // Live view of the playlist being edited, so add/remove reflect immediately
+  // (editTarget is only the snapshot captured when it was selected).
+  const editingPlaylist = editTarget
+    ? (userPlaylists.find(p => p.id === editTarget.id) || editTarget)
+    : null;
+
+  // Songs the user can add: their own library, minus what's already in the playlist.
+  const editAddPool = (() => {
+    if (!editingPlaylist) return [];
+    const inPlaylist = new Set((editingPlaylist.songs || []).map(s => s.id));
+    const seen = new Set();
+    const pool = [];
+    [...likedSongs, ...recentlyPlayed, ...createdSongs, ...downloadedSongs].forEach(s => {
+      if (s && !seen.has(s.id) && !inPlaylist.has(s.id)) { seen.add(s.id); pool.push(s); }
+    });
+    return pool;
+  })();
+
+  const handleRemoveSong = (songId) => removeSongFromPlaylist(songId, editTarget.id);
+
+  const handleAddSongToEdit = (song) => {
+    const ok = addSongToPlaylist(song, editTarget.id);
+    if (!ok) {
+      promptUpgrade(
+        'Song Limit Reached',
+        `Free playlists hold up to ${FREE_SONGS_PER_PLAYLIST} songs. Upgrade to Premium for unlimited songs.`
+      );
+    }
   };
 
   const handlePremiumGate = (feature, onGranted) => {
@@ -296,9 +344,9 @@ export default function CreateScreen({ navigation }) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         {/* ── 1. Create Playlist ── */}
-        <SectionHeader title="Create Playlist" />
+        <SectionHeader styles={styles} c={c} title="Create Playlist" />
         <View style={styles.block}>
-          <CreateRow
+          <CreateRow styles={styles} c={c}
             icon="add-circle-outline"
             title="New Playlist"
             sub={isPremium
@@ -310,14 +358,14 @@ export default function CreateScreen({ navigation }) {
           />
           {/* Existing playlists — tap to open & play */}
           {myPlaylists.map(pl => (
-            <MyPlaylistRow
+            <MyPlaylistRow styles={styles} c={c}
               key={pl.id}
               playlist={pl}
               onPress={() => setDetailPlaylist(pl)}
             />
           ))}
-          {/* REVIEW MODE: Collaborative Playlist temporarily active — re-gate to premium after review */}
-          <CreateRow
+          {/* Collaborative Playlist is free for everyone (bypasses the 1-playlist cap). */}
+          <CreateRow styles={styles} c={c}
             icon="people-outline"
             title="Collaborative Playlist"
             sub="Create a playlist, then share it so friends can add songs"
@@ -326,35 +374,28 @@ export default function CreateScreen({ navigation }) {
         </View>
 
         {/* ── 2. AI Music ── */}
-        <SectionHeader title="AI Music" />
+        <SectionHeader styles={styles} c={c} title="AI Music" />
         <View style={styles.block}>
           {/* REVIEW MODE: Generate AI Song temporarily open — re-add locked={!isPremium} + handlePremiumGate after review */}
-          <CreateRow
+          <CreateRow styles={styles} c={c}
             icon="sparkles-outline"
             title="Generate AI Song"
-            sub="Describe a song — AI writes and produces it. Add cover art after."
+            sub="Describe a song — AI writes, produces and writes the lyrics. Add cover art after."
             onPress={() => navigation.navigate('AIGen')}
           />
           {/* REVIEW MODE: AI Playlist Generator temporarily open — re-add locked={!isPremium} + handlePremiumGate after review */}
-          <CreateRow
+          <CreateRow styles={styles} c={c}
             icon="albums-outline"
             title="AI Playlist Generator"
             sub="Pick a mood and genre — get a full playlist of related songs"
             onPress={() => navigation.navigate('AIPlaylist')}
           />
-          {/* REVIEW MODE: AI Lyrics Generator temporarily active — re-gate to premium after review */}
-          <CreateRow
-            icon="document-text-outline"
-            title="AI Lyrics Generator"
-            sub="Turn a theme into full song lyrics"
-            onPress={() => navigation.navigate('AILyrics')}
-          />
         </View>
 
         {/* ── 3. Upload Content ── */}
-        <SectionHeader title="Upload Content" />
+        <SectionHeader styles={styles} c={c} title="Upload Content" />
         <View style={styles.block}>
-          <CreateRow
+          <CreateRow styles={styles} c={c}
             icon="cloud-upload-outline"
             title="Upload Music"
             sub={createdSongs.length > 0
@@ -365,15 +406,15 @@ export default function CreateScreen({ navigation }) {
         </View>
 
         {/* ── 4. Edit & Share ── */}
-        <SectionHeader title="Edit & Share" />
+        <SectionHeader styles={styles} c={c} title="Edit & Share" />
         <View style={styles.block}>
-          <CreateRow
+          <CreateRow styles={styles} c={c}
             icon="create-outline"
             title="Edit Content"
-            sub="Rename playlists and change their icon"
+            sub="Rename a playlist, add or remove its songs"
             onPress={handleOpenEdit}
           />
-          <CreateRow
+          <CreateRow styles={styles} c={c}
             icon="share-social-outline"
             title="Share"
             sub="Share a playlist or songs — as a link or QR code"
@@ -402,14 +443,49 @@ export default function CreateScreen({ navigation }) {
                         : <Text style={{ fontSize: 20 }}>{pl.emoji}</Text>}
                     </View>
                     <Text style={styles.playlistPickName} numberOfLines={1}>{pl.name}</Text>
-                    <Ionicons name="chevron-forward" size={15} color="#333" />
+                    <Ionicons name="chevron-forward" size={15} color={c.textFaint} />
                   </TouchableOpacity>
                 ))}
               </>
+            ) : editAddMode ? (
+              /* ── Add songs: pick from the user's own library ── */
+              <>
+                <TouchableOpacity style={styles.backRow} onPress={() => setEditAddMode(false)}>
+                  <Ionicons name="arrow-back" size={16} color={c.textFaint} />
+                  <Text style={styles.backRowText}>Back to edit</Text>
+                </TouchableOpacity>
+                <Text style={styles.sheetTitle}>Add Songs</Text>
+
+                {editAddPool.length === 0 ? (
+                  <Text style={styles.editEmptyText}>
+                    Nothing left to add. Songs you like, play, create or download show up here.
+                  </Text>
+                ) : (
+                  <ScrollView style={styles.editSongScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    {editAddPool.map(song => (
+                      <TouchableOpacity
+                        key={song.id}
+                        style={styles.editSongRow}
+                        onPress={() => handleAddSongToEdit(song)}
+                        activeOpacity={0.75}>
+                        <View style={styles.editSongArt}>
+                          <SongThumb song={song} imgStyle={styles.editSongImage} emojiStyle={{ fontSize: 18 }} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.editSongTitle} numberOfLines={1}>{song.title}</Text>
+                          <Text style={styles.editSongArtist} numberOfLines={1}>{song.artist}</Text>
+                        </View>
+                        <Ionicons name="add-circle" size={24} color={c.text} />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+              </>
             ) : (
+              /* ── Edit: rename, icon, and manage songs ── */
               <>
                 <TouchableOpacity style={styles.backRow} onPress={() => setEditTarget(null)}>
-                  <Ionicons name="arrow-back" size={16} color="#555" />
+                  <Ionicons name="arrow-back" size={16} color={c.textFaint} />
                   <Text style={styles.backRowText}>All playlists</Text>
                 </TouchableOpacity>
                 <Text style={styles.sheetTitle}>Edit Playlist</Text>
@@ -418,10 +494,9 @@ export default function CreateScreen({ navigation }) {
                 <TextInput
                   style={styles.sheetInput}
                   placeholder="Playlist name"
-                  placeholderTextColor="#333"
+                  placeholderTextColor={c.textFaint}
                   value={editName}
                   onChangeText={setEditName}
-                  autoFocus
                   maxLength={40}
                 />
 
@@ -437,13 +512,46 @@ export default function CreateScreen({ navigation }) {
                   ))}
                 </View>
 
+                <View style={styles.editSongsHeader}>
+                  <Text style={[styles.sheetLabel, { marginBottom: 0 }]}>
+                    Songs ({editingPlaylist?.songs?.length || 0})
+                  </Text>
+                  <TouchableOpacity style={styles.addSongsBtn} onPress={() => setEditAddMode(true)} activeOpacity={0.8}>
+                    <Ionicons name="add" size={15} color={c.icon} />
+                    <Text style={styles.addSongsBtnText}>Add Songs</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {(editingPlaylist?.songs?.length || 0) === 0 ? (
+                  <Text style={styles.editEmptyText}>No songs yet — tap “Add Songs” to fill this playlist.</Text>
+                ) : (
+                  <ScrollView style={styles.editSongScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    {editingPlaylist.songs.map(song => (
+                      <View key={song.id} style={styles.editSongRow}>
+                        <View style={styles.editSongArt}>
+                          <SongThumb song={song} imgStyle={styles.editSongImage} emojiStyle={{ fontSize: 18 }} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.editSongTitle} numberOfLines={1}>{song.title}</Text>
+                          <Text style={styles.editSongArtist} numberOfLines={1}>{song.artist}</Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => handleRemoveSong(song.id)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                          <Ionicons name="remove-circle" size={24} color={c.danger} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
+
                 <TouchableOpacity style={styles.sheetCreateBtn} onPress={handleSaveEdit} activeOpacity={0.85}>
                   <Text style={styles.sheetCreateBtnText}>Save Changes</Text>
                 </TouchableOpacity>
               </>
             )}
 
-            <TouchableOpacity style={styles.sheetCancelBtn} onPress={() => { setShowEditModal(false); setEditTarget(null); }}>
+            <TouchableOpacity style={styles.sheetCancelBtn} onPress={closeEdit}>
               <Text style={styles.sheetCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -461,33 +569,12 @@ export default function CreateScreen({ navigation }) {
             <TextInput
               style={styles.sheetInput}
               placeholder="e.g. Late Night Vibes"
-              placeholderTextColor="#333"
+              placeholderTextColor={c.textFaint}
               value={playlistName}
               onChangeText={setPlaylistName}
               autoFocus
               maxLength={40}
             />
-
-            <Text style={styles.sheetLabel}>Choose Icon</Text>
-            <View style={styles.emojiGrid}>
-              {EMOJIS.map(emoji => (
-                <TouchableOpacity
-                  key={emoji}
-                  style={[styles.emojiBtn, selectedEmoji === emoji && styles.emojiBtnSelected]}
-                  onPress={() => setSelectedEmoji(emoji)}>
-                  <Text style={styles.emojiText}>{emoji}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.previewRow}>
-              <View style={styles.previewArt}>
-                <Text style={{ fontSize: 28 }}>{selectedEmoji}</Text>
-              </View>
-              <Text style={styles.previewName} numberOfLines={1}>
-                {playlistName || 'Untitled Playlist'}
-              </Text>
-            </View>
 
             <TouchableOpacity style={styles.sheetCreateBtn} onPress={handleSave} activeOpacity={0.85}>
               <Text style={styles.sheetCreateBtnText}>Create Playlist</Text>
@@ -527,7 +614,7 @@ export default function CreateScreen({ navigation }) {
                       style={styles.playAllBtn}
                       onPress={() => playFromPlaylist(detailPlaylist.songs[0], detailPlaylist.songs, 0)}
                       activeOpacity={0.85}>
-                      <Ionicons name="play" size={16} color="#000" />
+                      <Ionicons name="play" size={16} color={c.accentText} />
                       <Text style={styles.playAllBtnText}>Play All</Text>
                     </TouchableOpacity>
 
@@ -540,22 +627,20 @@ export default function CreateScreen({ navigation }) {
                           activeOpacity={0.75}>
                           <Text style={styles.detailSongIdx}>{index + 1}</Text>
                           <View style={styles.detailSongArt}>
-                            {song.imageUrl
-                              ? <Image source={{ uri: song.imageUrl }} style={styles.detailSongImage} />
-                              : <Text style={styles.detailSongEmoji}>{song.emoji || '🎵'}</Text>}
+                            <SongThumb song={song} imgStyle={styles.detailSongImage} emojiStyle={styles.detailSongEmoji} />
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={styles.detailSongTitle} numberOfLines={1}>{song.title}</Text>
                             <Text style={styles.detailSongArtist} numberOfLines={1}>{song.artist}</Text>
                           </View>
-                          <Ionicons name="play-circle-outline" size={24} color="#555" />
+                          <Ionicons name="play-circle-outline" size={24} color={c.textFaint} />
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
                   </>
                 ) : (
                   <View style={styles.detailEmpty}>
-                    <Ionicons name="musical-notes-outline" size={40} color="#2A2A2A" />
+                    <Ionicons name="musical-notes-outline" size={40} color={c.textFaint} />
                     <Text style={styles.detailEmptyText}>No songs yet</Text>
                     <Text style={styles.detailEmptySub}>Add songs to this playlist from any Player screen.</Text>
                   </View>
@@ -587,21 +672,19 @@ export default function CreateScreen({ navigation }) {
                     onPress={() => playCreatedSong(song, index)}
                     activeOpacity={0.75}>
                     <View style={styles.detailSongArt}>
-                      {song.imageUrl
-                        ? <Image source={{ uri: song.imageUrl }} style={styles.detailSongImage} />
-                        : <Text style={styles.detailSongEmoji}>{song.emoji || '✨'}</Text>}
+                      <SongThumb song={song} imgStyle={styles.detailSongImage} emojiStyle={styles.detailSongEmoji} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.detailSongTitle} numberOfLines={1}>{song.title}</Text>
                       <Text style={styles.detailSongArtist} numberOfLines={1}>{song.artist} · {song.genre}</Text>
                     </View>
-                    <Ionicons name="play-circle-outline" size={24} color="#555" />
+                    <Ionicons name="play-circle-outline" size={24} color={c.textFaint} />
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             ) : (
               <View style={styles.detailEmpty}>
-                <Ionicons name="cloud-upload-outline" size={40} color="#2A2A2A" />
+                <Ionicons name="cloud-upload-outline" size={40} color={c.textFaint} />
                 <Text style={styles.detailEmptyText}>No music yet</Text>
                 <Text style={styles.detailEmptySub}>Create a song with Generate AI Song and it'll show up here.</Text>
               </View>
@@ -637,7 +720,7 @@ export default function CreateScreen({ navigation }) {
                         <Text style={styles.shareRowName} numberOfLines={1}>{pl.name}</Text>
                         <Text style={styles.shareRowSub}>{pl.songs.length} {pl.songs.length === 1 ? 'song' : 'songs'}</Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={17} color="#555" />
+                      <Ionicons name="chevron-forward" size={17} color={c.textFaint} />
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -648,28 +731,28 @@ export default function CreateScreen({ navigation }) {
             {shareStep === 'mode' && sharePlaylist && (
               <>
                 <TouchableOpacity style={styles.backRow} onPress={() => setShareStep('pick')}>
-                  <Ionicons name="arrow-back" size={16} color="#888" />
+                  <Ionicons name="arrow-back" size={16} color={c.textDim} />
                   <Text style={styles.backRowText}>Playlists</Text>
                 </TouchableOpacity>
                 <Text style={styles.sheetTitle} numberOfLines={1}>{sharePlaylist.name}</Text>
                 <Text style={styles.shareStepSub}>What do you want to share?</Text>
 
                 <TouchableOpacity style={styles.shareOptionCard} onPress={shareWholePlaylist} activeOpacity={0.8}>
-                  <View style={styles.shareOptionIcon}><Ionicons name="albums-outline" size={22} color="#fff" /></View>
+                  <View style={styles.shareOptionIcon}><Ionicons name="albums-outline" size={22} color={c.icon} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.shareOptionTitle}>Entire Playlist</Text>
                     <Text style={styles.shareOptionSub}>Share all {sharePlaylist.songs.length} songs</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={17} color="#555" />
+                  <Ionicons name="chevron-forward" size={17} color={c.textFaint} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.shareOptionCard} onPress={() => { setShareSelectedIds([]); setShareStep('select'); }} activeOpacity={0.8}>
-                  <View style={styles.shareOptionIcon}><Ionicons name="checkmark-done-outline" size={22} color="#fff" /></View>
+                  <View style={styles.shareOptionIcon}><Ionicons name="checkmark-done-outline" size={22} color={c.icon} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.shareOptionTitle}>Select Songs</Text>
                     <Text style={styles.shareOptionSub}>Pick specific songs to share</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={17} color="#555" />
+                  <Ionicons name="chevron-forward" size={17} color={c.textFaint} />
                 </TouchableOpacity>
               </>
             )}
@@ -678,7 +761,7 @@ export default function CreateScreen({ navigation }) {
             {shareStep === 'select' && sharePlaylist && (
               <>
                 <TouchableOpacity style={styles.backRow} onPress={() => setShareStep('mode')}>
-                  <Ionicons name="arrow-back" size={16} color="#888" />
+                  <Ionicons name="arrow-back" size={16} color={c.textDim} />
                   <Text style={styles.backRowText}>Back</Text>
                 </TouchableOpacity>
                 <Text style={styles.sheetTitle}>Select Songs</Text>
@@ -689,12 +772,10 @@ export default function CreateScreen({ navigation }) {
                     return (
                       <TouchableOpacity key={song.id} style={styles.selectRow} onPress={() => toggleShareSong(song.id)} activeOpacity={0.75}>
                         <View style={[styles.checkbox, on && styles.checkboxOn]}>
-                          {on && <Ionicons name="checkmark" size={14} color="#000" />}
+                          {on && <Ionicons name="checkmark" size={14} color={c.accentText} />}
                         </View>
                         <View style={styles.shareRowArt}>
-                          {song.imageUrl
-                            ? <Image source={{ uri: song.imageUrl }} style={styles.shareRowImage} />
-                            : <Text style={styles.shareRowEmoji}>{song.emoji || '🎵'}</Text>}
+                          <SongThumb song={song} imgStyle={styles.shareRowImage} emojiStyle={styles.shareRowEmoji} />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.shareRowName} numberOfLines={1}>{song.title}</Text>
@@ -718,7 +799,7 @@ export default function CreateScreen({ navigation }) {
             {shareStep === 'format' && sharePlaylist && (
               <>
                 <TouchableOpacity style={styles.backRow} onPress={() => setShareStep(getShareSongs().length === sharePlaylist.songs.length ? 'mode' : 'select')}>
-                  <Ionicons name="arrow-back" size={16} color="#888" />
+                  <Ionicons name="arrow-back" size={16} color={c.textDim} />
                   <Text style={styles.backRowText}>Back</Text>
                 </TouchableOpacity>
                 <Text style={styles.sheetTitle}>Share As</Text>
@@ -727,21 +808,21 @@ export default function CreateScreen({ navigation }) {
                 </Text>
 
                 <TouchableOpacity style={styles.shareOptionCard} onPress={shareAsLink} activeOpacity={0.8}>
-                  <View style={styles.shareOptionIcon}><Ionicons name="link-outline" size={22} color="#fff" /></View>
+                  <View style={styles.shareOptionIcon}><Ionicons name="link-outline" size={22} color={c.icon} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.shareOptionTitle}>Share as Link</Text>
                     <Text style={styles.shareOptionSub}>Send via WhatsApp, messages, and more</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={17} color="#555" />
+                  <Ionicons name="chevron-forward" size={17} color={c.textFaint} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.shareOptionCard} onPress={shareAsQR} activeOpacity={0.8}>
-                  <View style={styles.shareOptionIcon}><Ionicons name="qr-code-outline" size={22} color="#fff" /></View>
+                  <View style={styles.shareOptionIcon}><Ionicons name="qr-code-outline" size={22} color={c.icon} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.shareOptionTitle}>Share as QR Code</Text>
                     <Text style={styles.shareOptionSub}>Scan in Sonara to save the playlist</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={17} color="#555" />
+                  <Ionicons name="chevron-forward" size={17} color={c.textFaint} />
                 </TouchableOpacity>
               </>
             )}
@@ -750,7 +831,7 @@ export default function CreateScreen({ navigation }) {
             {shareStep === 'qr' && (
               <>
                 <TouchableOpacity style={styles.backRow} onPress={() => setShareStep('format')}>
-                  <Ionicons name="arrow-back" size={16} color="#888" />
+                  <Ionicons name="arrow-back" size={16} color={c.textDim} />
                   <Text style={styles.backRowText}>Back</Text>
                 </TouchableOpacity>
                 <Text style={styles.sheetTitle}>Scan to Save</Text>
@@ -783,16 +864,16 @@ export default function CreateScreen({ navigation }) {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
 
   header: {
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 22,
   },
-  title: { fontSize: 30, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: '#9A9A9A', marginTop: 5, fontWeight: '700' },
+  title: { fontSize: 30, fontWeight: '900', color: c.text, letterSpacing: -0.5 },
+  subtitle: { fontSize: 14, color: c.textDim, marginTop: 5, fontWeight: '700' },
 
   scroll: { paddingBottom: 20 },
 
@@ -805,7 +886,7 @@ const styles = StyleSheet.create({
   sectionHeaderText: {
     fontSize: 12,
     fontWeight: '900',
-    color: '#8A8A8A',
+    color: c.textDim,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
@@ -814,10 +895,10 @@ const styles = StyleSheet.create({
   block: {
     marginHorizontal: 20,
     marginBottom: 30,
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#1A1A1A',
+    borderColor: c.border,
     overflow: 'hidden',
   },
 
@@ -835,22 +916,22 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 13,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: c.elevated,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  createRowIconMuted: { backgroundColor: '#141414' },
+  createRowIconMuted: { backgroundColor: c.surface },
   createRowInfo: { flex: 1 },
-  createRowTitle: { color: '#fff', fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
-  createRowTitleMuted: { color: '#666' },
-  createRowSub: { color: '#9A9A9A', fontSize: 12.5, marginTop: 4, lineHeight: 18, fontWeight: '600' },
+  createRowTitle: { color: c.text, fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
+  createRowTitleMuted: { color: c.textFaint },
+  createRowSub: { color: c.textDim, fontSize: 12.5, marginTop: 4, lineHeight: 18, fontWeight: '600' },
 
   // Existing playlist row art
   playlistArt: {
     width: 46,
     height: 46,
     borderRadius: 13,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: c.elevated,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -863,34 +944,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: c.borderStrong,
   },
-  lockText: { color: '#888', fontSize: 10, fontWeight: '800' },
+  lockText: { color: c.textDim, fontSize: 10, fontWeight: '800' },
   soonBadge: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: c.borderStrong,
   },
-  soonText: { color: '#888', fontSize: 10, fontWeight: '800' },
+  soonText: { color: c.textDim, fontSize: 10, fontWeight: '800' },
 
   // Modal / sheet
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
     padding: 28,
     paddingBottom: 48,
     borderTopWidth: 1,
-    borderColor: '#1E1E1E',
+    borderColor: c.border,
   },
   sheetHandle: {
     width: 36, height: 3,
@@ -898,155 +979,181 @@ const styles = StyleSheet.create({
     alignSelf: 'center', marginBottom: 24,
   },
   sheetTitle: {
-    fontSize: 21, fontWeight: '900', color: '#fff', letterSpacing: -0.3,
+    fontSize: 21, fontWeight: '900', color: c.text, letterSpacing: -0.3,
     textAlign: 'center', marginBottom: 24,
   },
   sheetLabel: {
-    fontSize: 11, color: '#888', fontWeight: '800',
+    fontSize: 11, color: c.textDim, fontWeight: '800',
     textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10,
   },
   sheetInput: {
-    backgroundColor: '#1A1A1A',
-    color: '#fff',
+    backgroundColor: c.elevated,
+    color: c.text,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 12,
     fontSize: 15,
     marginBottom: 22,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: c.borderStrong,
   },
   emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 22 },
   emojiBtn: {
     width: 46, height: 46,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
-  emojiBtnSelected: { borderColor: '#fff', backgroundColor: '#2A2A2A' },
+  emojiBtnSelected: { borderColor: c.accent, backgroundColor: c.elevated },
   emojiText: { fontSize: 22 },
   previewRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     borderRadius: 12,
     padding: 14,
     gap: 14,
     marginBottom: 22,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: c.borderStrong,
   },
   previewArt: {
     width: 46, height: 46,
-    backgroundColor: '#2A2A2A',
+    backgroundColor: c.elevated,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  previewName: { color: '#fff', fontSize: 15, fontWeight: '900', flex: 1 },
+  previewName: { color: c.text, fontSize: 15, fontWeight: '900', flex: 1 },
   sheetCreateBtn: {
-    backgroundColor: '#fff',
+    backgroundColor: c.accent,
     paddingVertical: 15,
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 10,
   },
-  sheetCreateBtnText: { color: '#000', fontSize: 15.5, fontWeight: '900', letterSpacing: -0.2 },
+  sheetCreateBtnText: { color: c.accentText, fontSize: 15.5, fontWeight: '900', letterSpacing: -0.2 },
   sheetCancelBtn: { paddingVertical: 12, alignItems: 'center' },
-  sheetCancelBtnText: { color: '#888', fontSize: 14, fontWeight: '700' },
+  sheetCancelBtnText: { color: c.textDim, fontSize: 14, fontWeight: '700' },
 
   playlistPickRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1A1A1A',
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border,
   },
   playlistPickArt: {
     width: 44, height: 44, borderRadius: 10,
-    backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
   playlistPickImage: { width: '100%', height: '100%', borderRadius: 10 },
-  playlistPickName: { flex: 1, color: '#fff', fontSize: 15, fontWeight: '800' },
+  playlistPickName: { flex: 1, color: c.text, fontSize: 15, fontWeight: '800' },
 
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
-  backRowText: { color: '#888', fontSize: 13, fontWeight: '700' },
+  backRowText: { color: c.textDim, fontSize: 13, fontWeight: '700' },
+
+  // Edit playlist — song management
+  editSongsHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 22, marginBottom: 12,
+  },
+  addSongsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,
+    backgroundColor: c.elevated, borderWidth: 1, borderColor: c.borderStrong,
+  },
+  addSongsBtnText: { color: c.text, fontSize: 12.5, fontWeight: '800' },
+  editSongScroll: { maxHeight: 220 },
+  editSongRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: c.border,
+  },
+  editSongArt: {
+    width: 40, height: 40, borderRadius: 9,
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  editSongImage: { width: '100%', height: '100%' },
+  editSongTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
+  editSongArtist: { color: c.textDim, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  editEmptyText: { color: c.textFaint, fontSize: 13, fontWeight: '600', lineHeight: 19, paddingVertical: 14 },
 
   // Playlist detail
   detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 },
   detailHeaderArt: {
     width: 64, height: 64, borderRadius: 14,
-    backgroundColor: '#1E1E1E', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
   detailHeaderImage: { width: '100%', height: '100%', borderRadius: 14 },
   detailHeaderEmoji: { fontSize: 32 },
-  detailHeaderName: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
-  detailHeaderCount: { color: '#9A9A9A', fontSize: 13, fontWeight: '700', marginTop: 4 },
+  detailHeaderName: { color: c.text, fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
+  detailHeaderCount: { color: c.textDim, fontSize: 13, fontWeight: '700', marginTop: 4 },
   playAllBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#fff', paddingVertical: 13, borderRadius: 12, marginBottom: 6,
+    backgroundColor: c.accent, paddingVertical: 13, borderRadius: 12, marginBottom: 6,
   },
-  playAllBtnText: { color: '#000', fontSize: 15, fontWeight: '900', letterSpacing: -0.2 },
+  playAllBtnText: { color: c.accentText, fontSize: 15, fontWeight: '900', letterSpacing: -0.2 },
   detailSongRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     paddingVertical: 10,
   },
-  detailSongIdx: { color: '#888', fontSize: 13, fontWeight: '800', width: 20, textAlign: 'center' },
+  detailSongIdx: { color: c.textDim, fontSize: 13, fontWeight: '800', width: 20, textAlign: 'center' },
   detailSongArt: {
     width: 46, height: 46, borderRadius: 10,
-    backgroundColor: '#1E1E1E', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
   detailSongImage: { width: '100%', height: '100%', borderRadius: 10 },
   detailSongEmoji: { fontSize: 22 },
-  detailSongTitle: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
-  detailSongArtist: { color: '#9A9A9A', fontSize: 12.5, fontWeight: '600', marginTop: 3 },
+  detailSongTitle: { color: c.text, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
+  detailSongArtist: { color: c.textDim, fontSize: 12.5, fontWeight: '600', marginTop: 3 },
   detailEmpty: { alignItems: 'center', paddingVertical: 40, gap: 10 },
-  detailEmptyText: { color: '#bbb', fontSize: 16, fontWeight: '800' },
+  detailEmptyText: { color: c.textDim, fontSize: 16, fontWeight: '800' },
   detailEmptySub: { color: '#777', fontSize: 13, fontWeight: '600', textAlign: 'center', paddingHorizontal: 20, lineHeight: 19 },
 
   // Share flow
-  shareStepSub: { color: '#9A9A9A', fontSize: 13, fontWeight: '600', textAlign: 'center', marginTop: -14, marginBottom: 18 },
+  shareStepSub: { color: c.textDim, fontSize: 13, fontWeight: '600', textAlign: 'center', marginTop: -14, marginBottom: 18 },
   shareRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1A1A1A',
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border,
   },
   shareRowArt: {
     width: 46, height: 46, borderRadius: 11,
-    backgroundColor: '#1E1E1E', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
   shareRowImage: { width: '100%', height: '100%', borderRadius: 11 },
   shareRowEmoji: { fontSize: 22 },
-  shareRowName: { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
-  shareRowSub: { color: '#9A9A9A', fontSize: 12.5, fontWeight: '600', marginTop: 3 },
+  shareRowName: { color: c.text, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
+  shareRowSub: { color: c.textDim, fontSize: 12.5, fontWeight: '600', marginTop: 3 },
   shareOptionCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: '#1A1A1A', borderRadius: 14, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: '#2A2A2A',
+    backgroundColor: c.elevated, borderRadius: 14, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: c.borderStrong,
   },
   shareOptionIcon: {
     width: 44, height: 44, borderRadius: 12,
-    backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
   },
-  shareOptionTitle: { color: '#fff', fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
-  shareOptionSub: { color: '#9A9A9A', fontSize: 12.5, fontWeight: '600', marginTop: 3 },
+  shareOptionTitle: { color: c.text, fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
+  shareOptionSub: { color: c.textDim, fontSize: 12.5, fontWeight: '600', marginTop: 3 },
   selectRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9 },
   checkbox: {
     width: 24, height: 24, borderRadius: 7,
     borderWidth: 2, borderColor: '#3A3A3A',
     alignItems: 'center', justifyContent: 'center',
   },
-  checkboxOn: { backgroundColor: '#fff', borderColor: '#fff' },
+  checkboxOn: { backgroundColor: c.accent, borderColor: c.accent },
   shareBtnDisabled: { opacity: 0.4 },
   qrBox: {
     width: 240, height: 240, borderRadius: 16, alignSelf: 'center',
-    backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden', marginBottom: 8, marginTop: 4,
   },
   qrImage: { width: 240, height: 240 },
   qrLoading: { position: 'absolute', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eee', zIndex: 1 },
-  qrLoadingText: { color: '#333', fontSize: 14, fontWeight: '700' },
+  qrLoadingText: { color: c.textFaint, fontSize: 14, fontWeight: '700' },
 });

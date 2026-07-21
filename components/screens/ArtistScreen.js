@@ -3,12 +3,6 @@ import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated } from '
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
 
-const GENRE_COLORS = {
-  Afrobeats: '#FF6B35', 'Hip Hop': '#9B59B6', Pop: '#E91E63',
-  'R&B': '#3498DB', Soul: '#E67E22', Gospel: '#2ECC71',
-  Amapiano: '#1ABC9C', Rap: '#E74C3C',
-};
-
 const ARTIST_SONGS = {
   'Burna Boy': [
     { id: 'bb1', title: 'Last Last', artist: 'Burna Boy', genre: 'Afrobeats', emoji: '🔥', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
@@ -43,9 +37,10 @@ const ARTIST_SONGS = {
 export default function ArtistScreen({ navigation, route }) {
   const { artist } = route.params;
   const { toggleFollowArtist, isFollowingArtist, loadAndPlay } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
   const isFollowing = isFollowingArtist(artist.id);
   const songs = ARTIST_SONGS[artist.name] || ARTIST_SONGS['default'];
-  const accentColor = GENRE_COLORS[artist.genre] || '#1DB954';
 
   // Real follower count: artists start with 0 and only gain followers when real
   // Sonara users follow them. `artist.followers` comes from the backend once the
@@ -71,26 +66,23 @@ export default function ArtistScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      {/* Glow background */}
-      <View style={[styles.glowBg, { backgroundColor: accentColor + '25' }]} />
-
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         {/* Back button */}
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color="#fff" />
+          <Ionicons name="chevron-back" size={22} color={c.icon} />
         </TouchableOpacity>
 
         {/* Artist hero */}
         <Animated.View style={[styles.hero, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <View style={[styles.avatarCircle, { borderColor: accentColor, shadowColor: accentColor }]}>
+          <View style={styles.avatarCircle}>
             <Text style={styles.avatarEmoji}>{artist.emoji || '🎤'}</Text>
           </View>
 
           <Text style={styles.artistName}>{artist.name}</Text>
 
           <View style={styles.genreTag}>
-            <Text style={[styles.genreTagText, { color: accentColor }]}>{artist.genre}</Text>
+            <Text style={styles.genreTagText}>{artist.genre}</Text>
           </View>
 
           {/* Stats row — real numbers only */}
@@ -108,24 +100,21 @@ export default function ArtistScreen({ navigation, route }) {
 
           {/* Action buttons */}
           <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={[styles.playAllBtn, { backgroundColor: accentColor }]}
-              onPress={playAll}
-              activeOpacity={0.85}>
-              <Ionicons name="play" size={16} color="#fff" />
+            <TouchableOpacity style={styles.playAllBtn} onPress={playAll} activeOpacity={0.85}>
+              <Ionicons name="play" size={16} color={c.accentText} />
               <Text style={styles.playAllText}>Play All</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.followBtn, isFollowing && { backgroundColor: accentColor, borderColor: accentColor }]}
+              style={[styles.followBtn, isFollowing && styles.followBtnActive]}
               onPress={handleFollow}
               activeOpacity={0.8}>
               <Ionicons
                 name={isFollowing ? 'checkmark' : 'add'}
                 size={16}
-                color={isFollowing ? '#fff' : accentColor}
+                color={isFollowing ? c.accentText : c.text}
               />
-              <Text style={[styles.followBtnText, isFollowing && { color: '#fff' }]}>
+              <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
                 {isFollowing ? 'Following' : 'Follow'}
               </Text>
             </TouchableOpacity>
@@ -145,14 +134,14 @@ export default function ArtistScreen({ navigation, route }) {
             }}
             activeOpacity={0.7}>
             <Text style={styles.songIndex}>{index + 1}</Text>
-            <View style={[styles.songArt, { backgroundColor: accentColor + '25' }]}>
+            <View style={styles.songArt}>
               <Text style={styles.songEmoji}>{song.emoji}</Text>
             </View>
             <View style={styles.songInfo}>
               <Text style={styles.songTitle}>{song.title}</Text>
               <Text style={styles.songArtist}>{song.artist}</Text>
             </View>
-            <Ionicons name="ellipsis-horizontal" size={18} color="#444" />
+            <Ionicons name="ellipsis-horizontal" size={18} color={c.textFaint} />
           </TouchableOpacity>
         ))}
 
@@ -162,17 +151,8 @@ export default function ArtistScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
-  glowBg: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 320,
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-  },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   scroll: { paddingBottom: 20 },
 
   backBtn: {
@@ -181,7 +161,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -191,40 +173,42 @@ const styles = StyleSheet.create({
     width: 130,
     height: 130,
     borderRadius: 65,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    marginBottom: 16,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 12,
+    borderWidth: 1,
+    borderColor: c.border,
+    marginBottom: 18,
+    overflow: 'hidden',
   },
-  avatarEmoji: { fontSize: 60 },
-  artistName: { fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 8, textAlign: 'center' },
+  avatarEmoji: { fontSize: 56 },
+  artistName: { fontSize: 27, fontWeight: '900', color: c.text, marginBottom: 10, textAlign: 'center', letterSpacing: -0.5 },
   genreTag: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    marginBottom: 20,
+    borderRadius: 6,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+    marginBottom: 22,
   },
-  genreTagText: { fontSize: 13, fontWeight: '700' },
+  genreTagText: { fontSize: 11, fontWeight: '800', color: c.textDim, textTransform: 'uppercase', letterSpacing: 1.1 },
 
   statsRow: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderRadius: 16,
+    backgroundColor: c.surface,
+    borderRadius: 14,
     paddingVertical: 16,
     paddingHorizontal: 8,
     marginBottom: 22,
     width: '100%',
+    borderWidth: 1,
+    borderColor: c.border,
   },
   statBox: { flex: 1, alignItems: 'center' },
-  statNum: { fontSize: 18, fontWeight: '800', color: '#fff' },
-  statLabel: { fontSize: 10, color: '#888', marginTop: 3, fontWeight: '600', textAlign: 'center' },
-  statDivider: { width: 1, backgroundColor: '#2A2A2A' },
+  statNum: { fontSize: 18, fontWeight: '800', color: c.text },
+  statLabel: { fontSize: 10, color: c.textDim, marginTop: 3, fontWeight: '700', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.8 },
+  statDivider: { width: 1, backgroundColor: c.elevated },
 
   actionRow: { flexDirection: 'row', gap: 12 },
   playAllBtn: {
@@ -234,8 +218,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingVertical: 12,
     borderRadius: 25,
+    backgroundColor: c.accent,
   },
-  playAllText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  playAllText: { color: c.accentText, fontSize: 15, fontWeight: '800' },
+  followBtnActive: { backgroundColor: c.accent, borderColor: c.accent },
+  followBtnTextActive: { color: c.accentText },
   followBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -243,19 +230,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingVertical: 12,
     borderRadius: 25,
-    borderWidth: 2,
-    borderColor: '#444',
+    borderWidth: 1,
+    borderColor: c.borderStrong,
   },
-  followBtnText: { color: '#ccc', fontSize: 15, fontWeight: '700' },
+  followBtnText: { color: c.text, fontSize: 15, fontWeight: '800' },
 
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#888',
+    fontSize: 11,
+    fontWeight: '900',
+    color: c.textDim,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
     paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   songRow: {
     flexDirection: 'row',
@@ -264,16 +251,20 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 14,
   },
-  songIndex: { color: '#444', fontSize: 13, width: 22, textAlign: 'center', fontWeight: '600' },
+  songIndex: { color: c.textFaint, fontSize: 13, width: 22, textAlign: 'center', fontWeight: '700' },
   songArt: {
     width: 50,
     height: 50,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+    overflow: 'hidden',
   },
   songEmoji: { fontSize: 24 },
   songInfo: { flex: 1 },
-  songTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  songArtist: { color: '#666', fontSize: 12, marginTop: 3 },
+  songTitle: { color: c.text, fontSize: 15, fontWeight: '700' },
+  songArtist: { color: c.textDim, fontSize: 12, marginTop: 3, fontWeight: '600' },
 });

@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
+import { searchAudius } from '../../services/audius';
+import { useArtwork } from '../../services/artwork';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_W = Math.floor(SCREEN_W * 0.38);
@@ -162,17 +164,20 @@ const ALL_SONGS = Object.values(GENRE_SONGS).flat();
 // credentials and signs the request. No keys live in this app.
 
 // ── DiscoverCard (module scope — TextInput keyboard-bug rule) ────────────────
-function DiscoverCard({ item, onPress }) {
+function DiscoverCard({ styles, c, item, onPress }) {
   const color = GENRE_COLORS[item.genre] || '#333';
+  const art = useArtwork(item);
   return (
     <TouchableOpacity
       style={styles.discoverCard}
       onPress={onPress}
       activeOpacity={0.82}>
       <View style={[styles.discoverArt, { backgroundColor: color + '22' }]}>
-        <Text style={styles.discoverEmoji}>{item.emoji}</Text>
+        {art
+          ? <Image source={{ uri: art }} style={styles.discoverArtImg} />
+          : <Text style={styles.discoverEmoji}>{item.emoji}</Text>}
         <View style={[styles.discoverPlayBtn, { backgroundColor: color }]}>
-          <Ionicons name="play" size={11} color="#fff" />
+          <Ionicons name="play" size={11} color={c.icon} />
         </View>
       </View>
       <View style={styles.discoverMeta}>
@@ -184,20 +189,23 @@ function DiscoverCard({ item, onPress }) {
 }
 
 // ── SongRow (module scope) ───────────────────────────────────────────────────
-function SongRow({ item, index, onPress, accentColor }) {
+function SongRow({ styles, c, item, index, onPress, accentColor }) {
+  const art = useArtwork(item);
   return (
     <TouchableOpacity
       style={styles.resultRow}
       onPress={() => onPress(item, index)}
       activeOpacity={0.7}>
       <View style={styles.resultArt}>
-        <Text style={styles.resultEmoji}>{item.emoji}</Text>
+        {art
+          ? <Image source={{ uri: art }} style={styles.resultArtImg} />
+          : <Text style={styles.resultEmoji}>{item.emoji}</Text>}
       </View>
       <View style={styles.resultInfo}>
         <Text style={styles.resultTitle}>{item.title}</Text>
         <Text style={styles.resultArtist}>{item.artist}</Text>
       </View>
-      <Ionicons name="play" size={15} color="#444" />
+      <Ionicons name="play" size={15} color={c.textFaint} />
     </TouchableOpacity>
   );
 }
@@ -208,9 +216,13 @@ export default function SearchScreen({ navigation }) {
     listeningHabits, getTopGenres, loadAndPlay, recentlyPlayed,
     searchHistory, setSearchHistory, addToSearchHistory,
   } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
 
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [audiusLoading, setAudiusLoading] = useState(false);
+  const audiusReqRef = useRef(0); // guards against stale (out-of-order) Audius responses
   const [selectedGenre, setSelectedGenre] = useState(null);
   const [focused, setFocused] = useState(false);
 
@@ -394,7 +406,9 @@ export default function SearchScreen({ navigation }) {
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleSearch = (text) => {
     setQuery(text);
-    if (!text.trim()) { setSearchResults([]); return; }
+    if (!text.trim()) { setSearchResults([]); setAudiusLoading(false); return; }
+    // Instant local matches so results feel immediate; real Audius songs stream in
+    // via the debounced effect below and get appended.
     const q = text.toLowerCase();
     setSearchResults(
       ALL_SONGS.filter(s =>
@@ -402,6 +416,26 @@ export default function SearchScreen({ navigation }) {
       )
     );
   };
+
+  // Pull real, streamable songs from Audius (no API key) and append them to the
+  // local matches. Debounced, and guarded so a slow response for an old query
+  // can't overwrite results for the current one.
+  useEffect(() => {
+    const term = query.trim();
+    if (!term) { setAudiusLoading(false); return; }
+    const reqId = ++audiusReqRef.current;
+    setAudiusLoading(true);
+    const timer = setTimeout(async () => {
+      const remote = await searchAudius(term, 20);
+      if (reqId !== audiusReqRef.current) return; // a newer query superseded this one
+      setSearchResults(prev => {
+        const seen = new Set(prev.map(s => s.id));
+        return [...prev, ...remote.filter(r => !seen.has(r.id))];
+      });
+      setAudiusLoading(false);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const openSong = (song, queue, index = 0) => {
     loadAndPlay(song, queue || [song], index);
@@ -426,7 +460,7 @@ export default function SearchScreen({ navigation }) {
       <View style={styles.container}>
         <View style={styles.genreHeader}>
           <TouchableOpacity style={styles.genreBackBtn} onPress={closeGenre} activeOpacity={0.75}>
-            <Ionicons name="arrow-back" size={20} color="#fff" />
+            <Ionicons name="arrow-back" size={20} color={c.icon} />
           </TouchableOpacity>
           <View style={styles.genreHeaderCenter}>
             <View style={[styles.genreIconBadge, { backgroundColor: color + '28' }]}>
@@ -439,7 +473,7 @@ export default function SearchScreen({ navigation }) {
         <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
           <View style={styles.genreSongList}>
             {songs.map((item, index) => (
-              <SongRow
+              <SongRow styles={styles} c={c}
                 key={item.id}
                 item={item}
                 index={index}
@@ -467,14 +501,14 @@ export default function SearchScreen({ navigation }) {
             style={styles.headerIconBtn}
             onPress={openRecognition}
             activeOpacity={0.75}>
-            <Ionicons name="musical-notes" size={19} color="#aaa" />
+            <Ionicons name="musical-notes" size={19} color={c.textDim} />
           </TouchableOpacity>
           {/* QR / camera scanner */}
           <TouchableOpacity
             style={styles.headerIconBtn}
             onPress={() => navigation.navigate('QRScanner')}
             activeOpacity={0.75}>
-            <Ionicons name="camera-outline" size={20} color="#aaa" />
+            <Ionicons name="camera-outline" size={20} color={c.textDim} />
           </TouchableOpacity>
         </View>
       </View>
@@ -482,11 +516,11 @@ export default function SearchScreen({ navigation }) {
       {/* Search bar */}
       <View style={styles.searchRow}>
         <View style={[styles.searchBar, focused && styles.searchBarFocused]}>
-          <Ionicons name="search" size={17} color="#444" />
+          <Ionicons name="search" size={17} color={c.textFaint} />
           <TextInput
             style={styles.searchInput}
             placeholder="Songs, artists, genres..."
-            placeholderTextColor="#333"
+            placeholderTextColor={c.textFaint}
             value={query}
             onChangeText={handleSearch}
             onFocus={() => setFocused(true)}
@@ -497,7 +531,7 @@ export default function SearchScreen({ navigation }) {
             <TouchableOpacity
               onPress={() => { setQuery(''); setSearchResults([]); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close-circle" size={17} color="#444" />
+              <Ionicons name="close-circle" size={17} color={c.textFaint} />
             </TouchableOpacity>
           )}
         </View>
@@ -515,10 +549,13 @@ export default function SearchScreen({ navigation }) {
           <View style={styles.section}>
             {searchResults.length > 0 ? (
               <>
-                <Text style={styles.sectionTitle}>Results · {searchResults.length}</Text>
+                <View style={styles.resultsHeader}>
+                  <Text style={styles.sectionTitle}>Results · {searchResults.length}</Text>
+                  {audiusLoading && <ActivityIndicator size="small" color={c.textDim} />}
+                </View>
                 <View style={{ marginTop: 14 }}>
                   {searchResults.map((item, index) => (
-                    <SongRow
+                    <SongRow styles={styles} c={c}
                       key={item.id}
                       item={item}
                       index={index}
@@ -528,9 +565,14 @@ export default function SearchScreen({ navigation }) {
                   ))}
                 </View>
               </>
+            ) : audiusLoading ? (
+              <View style={styles.emptyState}>
+                <ActivityIndicator size="small" color={c.textDim} />
+                <Text style={styles.emptySub}>Searching…</Text>
+              </View>
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="search-outline" size={44} color="#222" />
+                <Ionicons name="search-outline" size={44} color={c.textFaint} />
                 <Text style={styles.emptyTitle}>No results for "{query}"</Text>
                 <Text style={styles.emptySub}>Try a different song or artist name</Text>
               </View>
@@ -557,7 +599,7 @@ export default function SearchScreen({ navigation }) {
                   onPress={() => openSong(song)}
                   activeOpacity={0.7}>
                   <View style={styles.historyIcon}>
-                    <Ionicons name="time-outline" size={15} color="#444" />
+                    <Ionicons name="time-outline" size={15} color={c.textFaint} />
                   </View>
                   <View style={styles.historyInfo}>
                     <Text style={styles.historyTitle}>{song.title}</Text>
@@ -566,13 +608,13 @@ export default function SearchScreen({ navigation }) {
                   <TouchableOpacity
                     onPress={() => setSearchHistory(prev => prev.filter(s => s.id !== song.id))}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close" size={15} color="#333" />
+                    <Ionicons name="close" size={15} color={c.textFaint} />
                   </TouchableOpacity>
                 </TouchableOpacity>
               ))
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="time-outline" size={44} color="#222" />
+                <Ionicons name="time-outline" size={44} color={c.textFaint} />
                 <Text style={styles.emptyTitle}>No recent searches</Text>
                 <Text style={styles.emptySub}>Songs you search and play will show up here</Text>
               </View>
@@ -600,7 +642,7 @@ export default function SearchScreen({ navigation }) {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.discoverList}
                 renderItem={({ item }) => (
-                  <DiscoverCard
+                  <DiscoverCard styles={styles} c={c}
                     item={item}
                     onPress={() => openSong(item, discoverSongs, discoverSongs.indexOf(item))}
                   />
@@ -649,7 +691,7 @@ export default function SearchScreen({ navigation }) {
         <View style={styles.recognitionOverlay}>
 
           <TouchableOpacity style={styles.recognitionClose} onPress={closeRecognition}>
-            <Ionicons name="close" size={22} color="#555" />
+            <Ionicons name="close" size={22} color={c.textFaint} />
           </TouchableOpacity>
 
           {recognitionState === 'listening' && (
@@ -660,7 +702,7 @@ export default function SearchScreen({ navigation }) {
                   { transform: [{ scale: pulseAnim }], opacity: pulseOpacity },
                 ]}>
                 <View style={styles.pulseCore}>
-                  <Ionicons name="musical-notes" size={34} color="#fff" />
+                  <Ionicons name="musical-notes" size={34} color={c.icon} />
                 </View>
               </Animated.View>
               <Text style={styles.countdownNum}>{countdown}</Text>
@@ -674,7 +716,7 @@ export default function SearchScreen({ navigation }) {
 
           {recognitionState === 'searching' && (
             <>
-              <ActivityIndicator size={52} color="#fff" />
+              <ActivityIndicator size={52} color={c.icon} />
               <Text style={styles.recognitionLabel}>Identifying song...</Text>
               <Text style={styles.recognitionSub}>Searching millions of tracks</Text>
             </>
@@ -686,7 +728,7 @@ export default function SearchScreen({ navigation }) {
                 <Text style={styles.foundEmoji}>{recognizedSong.emoji || '🎵'}</Text>
               </View>
               <View style={styles.foundIdentifiedBadge}>
-                <Ionicons name="checkmark-circle" size={13} color="#fff" />
+                <Ionicons name="checkmark-circle" size={13} color={c.icon} />
                 <Text style={styles.foundIdentifiedText}>Song Identified</Text>
               </View>
               <Text style={styles.foundTitle}>{recognizedSong.title}</Text>
@@ -696,7 +738,7 @@ export default function SearchScreen({ navigation }) {
               <TouchableOpacity
                 style={styles.recognitionBtn}
                 onPress={() => { closeRecognition(); openSong(recognizedSong, [recognizedSong], 0); }}>
-                <Ionicons name="play" size={15} color="#fff" style={{ marginRight: 8 }} />
+                <Ionicons name="play" size={15} color={c.icon} style={{ marginRight: 8 }} />
                 <Text style={styles.recognitionBtnText}>Play on Sonara</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.retryBtn} onPress={retryRecognition}>
@@ -708,7 +750,7 @@ export default function SearchScreen({ navigation }) {
           {recognitionState === 'notFound' && (
             <>
               <View style={styles.notFoundIcon}>
-                <Ionicons name="musical-note-outline" size={38} color="#444" />
+                <Ionicons name="musical-note-outline" size={38} color={c.textFaint} />
               </View>
               <Text style={styles.recognitionLabel}>Song not found</Text>
               <Text style={styles.recognitionSub}>
@@ -728,8 +770,8 @@ export default function SearchScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000', paddingTop: 56 },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg, paddingTop: 56 },
 
   // Header
   header: {
@@ -739,49 +781,52 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 14,
   },
-  title: { fontSize: 26, fontWeight: '900', color: '#fff' },
+  title: { fontSize: 26, fontWeight: '900', color: c.text },
   headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerIconBtn: {
     width: 38, height: 38,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#111', borderRadius: 19,
-    borderWidth: 1, borderColor: '#1E1E1E',
+    backgroundColor: c.surface, borderRadius: 19,
+    borderWidth: 1, borderColor: c.border,
   },
 
   // Search bar
   searchRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 24 },
   searchBar: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#111', borderRadius: 12,
+    backgroundColor: c.surface, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 11, gap: 10,
-    borderWidth: 1, borderColor: '#1E1E1E',
+    borderWidth: 1, borderColor: c.border,
   },
-  searchBarFocused: { borderColor: '#333' },
-  searchInput: { flex: 1, color: '#fff', fontSize: 14 },
+  searchBarFocused: { borderColor: c.borderStrong },
+  searchInput: { flex: 1, color: c.text, fontSize: 14 },
   cancelBtn: { marginLeft: 12 },
-  cancelText: { color: '#888', fontSize: 14, fontWeight: '600' },
+  cancelText: { color: c.textDim, fontSize: 14, fontWeight: '600' },
 
   // Sections
   section: { marginBottom: 32, paddingHorizontal: 20 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#fff' },
-  clearAll: { color: '#555', fontSize: 13, fontWeight: '600' },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: c.text },
+  resultsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  clearAll: { color: c.textFaint, fontSize: 13, fontWeight: '600' },
 
   // Discover
   discoverHeaderRow: { marginBottom: 4 },
-  discoverSub: { fontSize: 12, color: '#444', marginTop: 2, paddingHorizontal: 20, marginBottom: 14 },
+  discoverSub: { fontSize: 12, color: c.textFaint, marginTop: 2, paddingHorizontal: 20, marginBottom: 14 },
   discoverList: { paddingHorizontal: 20, paddingBottom: 4, gap: 10 },
 
   // DiscoverCard — same scale as genre cards
   discoverCard: {
     width: CARD_W, borderRadius: 12,
-    backgroundColor: '#111', overflow: 'hidden',
-    borderWidth: 1, borderColor: '#1A1A1A',
+    backgroundColor: c.surface, overflow: 'hidden',
+    borderWidth: 1, borderColor: c.border,
   },
   discoverArt: {
     width: '100%', height: CARD_W * 0.82,
     alignItems: 'center', justifyContent: 'center', position: 'relative',
+    overflow: 'hidden',
   },
+  discoverArtImg: { ...StyleSheet.absoluteFillObject },
   discoverEmoji: { fontSize: 36 },
   discoverPlayBtn: {
     position: 'absolute', bottom: 8, right: 8,
@@ -789,42 +834,44 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   discoverMeta: { padding: 10 },
-  discoverTitle: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  discoverArtist: { color: '#555', fontSize: 10, marginTop: 2 },
+  discoverTitle: { color: c.text, fontSize: 12, fontWeight: '700' },
+  discoverArtist: { color: c.textFaint, fontSize: 10, marginTop: 2 },
 
   // SongRow
   resultRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#111', borderRadius: 10,
+    backgroundColor: c.surface, borderRadius: 10,
     padding: 11, marginBottom: 8, gap: 12,
   },
   resultArt: {
     width: 44, height: 44, borderRadius: 8,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
   },
+  resultArtImg: { width: '100%', height: '100%' },
   resultEmoji: { fontSize: 20 },
   resultInfo: { flex: 1 },
-  resultTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  resultArtist: { color: '#555', fontSize: 11, marginTop: 2 },
+  resultTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
+  resultArtist: { color: c.textFaint, fontSize: 11, marginTop: 2 },
 
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: 10 },
-  emptyTitle: { color: '#333', fontSize: 15, fontWeight: '700' },
-  emptySub: { color: '#2A2A2A', fontSize: 12 },
+  emptyTitle: { color: c.textFaint, fontSize: 15, fontWeight: '700' },
+  emptySub: { color: c.textFaint, fontSize: 12 },
 
   // History
   historyItem: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#111', borderRadius: 10,
+    backgroundColor: c.surface, borderRadius: 10,
     padding: 11, marginBottom: 8, gap: 10,
   },
   historyIcon: {
-    width: 32, height: 32, backgroundColor: '#1A1A1A',
+    width: 32, height: 32, backgroundColor: c.elevated,
     borderRadius: 16, alignItems: 'center', justifyContent: 'center',
   },
   historyInfo: { flex: 1 },
-  historyTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  historyArtist: { color: '#555', fontSize: 11, marginTop: 2 },
+  historyTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
+  historyArtist: { color: c.textFaint, fontSize: 11, marginTop: 2 },
 
   // Genre grid
   genreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -845,7 +892,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   genreImg: { width: 36, height: 36, borderRadius: 8 },
-  genreLabel: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  genreLabel: { color: c.text, fontSize: 13, fontWeight: '800' },
 
   // Genre full-screen view
   genreHeader: {
@@ -853,9 +900,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, marginBottom: 12,
   },
   genreBackBtn: {
-    width: 38, height: 38, backgroundColor: '#111',
+    width: 38, height: 38, backgroundColor: c.surface,
     borderRadius: 19, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#1E1E1E',
+    borderWidth: 1, borderColor: c.border,
   },
   genreHeaderCenter: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   genreIconBadge: {
@@ -873,7 +920,7 @@ const styles = StyleSheet.create({
   recognitionClose: {
     position: 'absolute', top: 56, right: 24,
     width: 38, height: 38, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#111', borderRadius: 19,
+    backgroundColor: c.surface, borderRadius: 19,
   },
 
   pulseRing: {
@@ -886,52 +933,52 @@ const styles = StyleSheet.create({
     backgroundColor: '#222',
     alignItems: 'center', justifyContent: 'center',
   },
-  recognitionLabel: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 28, textAlign: 'center' },
-  recognitionSub: { color: '#444', fontSize: 13, marginTop: 10, textAlign: 'center', lineHeight: 20 },
+  recognitionLabel: { color: c.text, fontSize: 20, fontWeight: '800', marginTop: 28, textAlign: 'center' },
+  recognitionSub: { color: c.textFaint, fontSize: 13, marginTop: 10, textAlign: 'center', lineHeight: 20 },
   cancelRecognitionBtn: { marginTop: 36, paddingVertical: 12, paddingHorizontal: 32 },
-  cancelRecognitionText: { color: '#444', fontSize: 14, fontWeight: '600' },
+  cancelRecognitionText: { color: c.textFaint, fontSize: 14, fontWeight: '600' },
 
   foundCard: {
-    width: '100%', backgroundColor: '#111',
+    width: '100%', backgroundColor: c.surface,
     borderRadius: 20, padding: 24, alignItems: 'center',
-    borderWidth: 1, borderColor: '#1E1E1E',
+    borderWidth: 1, borderColor: c.border,
   },
   foundArtBox: {
     width: 100, height: 100, borderRadius: 16,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: c.elevated,
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
   foundEmoji: { fontSize: 54 },
   foundIdentifiedBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: c.elevated,
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
     marginBottom: 10,
   },
-  foundIdentifiedText: { color: '#aaa', fontSize: 12, fontWeight: '700' },
-  foundTitle: { color: '#fff', fontSize: 19, fontWeight: '800', textAlign: 'center' },
-  foundArtist: { color: '#666', fontSize: 13, marginTop: 4, textAlign: 'center' },
-  foundAlbum: { color: '#444', fontSize: 12, marginTop: 4 },
-  foundDate: { color: '#333', fontSize: 11, marginTop: 2 },
+  foundIdentifiedText: { color: c.textDim, fontSize: 12, fontWeight: '700' },
+  foundTitle: { color: c.text, fontSize: 19, fontWeight: '800', textAlign: 'center' },
+  foundArtist: { color: c.textFaint, fontSize: 13, marginTop: 4, textAlign: 'center' },
+  foundAlbum: { color: c.textFaint, fontSize: 12, marginTop: 4 },
+  foundDate: { color: c.textFaint, fontSize: 11, marginTop: 2 },
 
   recognitionBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#1E1E1E', borderRadius: 28,
+    backgroundColor: c.elevated, borderRadius: 28,
     paddingVertical: 13, width: '100%', marginTop: 20,
-    borderWidth: 1, borderColor: '#2A2A2A',
+    borderWidth: 1, borderColor: c.borderStrong,
   },
-  recognitionBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  recognitionBtnText: { color: c.text, fontSize: 14, fontWeight: '800' },
   retryBtn: { paddingVertical: 12, marginTop: 4, width: '100%', alignItems: 'center' },
-  retryText: { color: '#444', fontSize: 13, fontWeight: '600' },
+  retryText: { color: c.textFaint, fontSize: 13, fontWeight: '600' },
 
   notFoundIcon: {
     width: 90, height: 90, borderRadius: 45,
-    backgroundColor: '#111', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center',
     marginBottom: 8,
   },
 
   countdownNum: {
-    color: '#fff', fontSize: 44, fontWeight: '900',
+    color: c.text, fontSize: 44, fontWeight: '900',
     marginTop: 18, lineHeight: 50,
   },
 });

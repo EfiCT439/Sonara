@@ -5,14 +5,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
+import { useArtwork, useArtistImage } from '../../services/artwork';
 
 // ─── All sub-components at module scope (keyboard-bug rule) ─────────────────
 
-function QuickCard({ icon, label, count, onPress }) {
+function QuickCard({ styles, c, icon, label, count, image, onPress }) {
   return (
     <TouchableOpacity style={styles.quickCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.quickIconWrap}>
-        <Ionicons name={icon} size={20} color="#aaa" />
+        {image
+          ? <Image source={{ uri: image }} style={styles.quickCardImage} />
+          : <Ionicons name={icon} size={20} color={c.textDim} />}
       </View>
       <Text style={styles.quickLabel} numberOfLines={1}>{label}</Text>
       {count !== undefined && count !== null && (
@@ -22,7 +25,7 @@ function QuickCard({ icon, label, count, onPress }) {
   );
 }
 
-function LibSectionHeader({ title }) {
+function LibSectionHeader({ styles, c, title }) {
   return (
     <View style={styles.libSectionHeader}>
       <Text style={styles.libSectionTitle}>{title}</Text>
@@ -30,11 +33,11 @@ function LibSectionHeader({ title }) {
   );
 }
 
-function CollectionRow({ icon, label, count, badge, locked, comingSoon, onPress }) {
+function CollectionRow({ styles, c, icon, label, count, badge, locked, comingSoon, onPress }) {
   return (
     <TouchableOpacity style={styles.collRow} onPress={onPress} activeOpacity={0.75}>
       <View style={styles.collIconWrap}>
-        <Ionicons name={icon} size={18} color="#666" />
+        <Ionicons name={icon} size={18} color={c.textFaint} />
       </View>
       <View style={styles.collInfo}>
         <Text style={[styles.collLabel, (locked || comingSoon) && styles.collLabelMuted]}>
@@ -46,7 +49,7 @@ function CollectionRow({ icon, label, count, badge, locked, comingSoon, onPress 
       </View>
       {locked && (
         <View style={styles.lockBadge}>
-          <Ionicons name="lock-closed" size={9} color="#555" />
+          <Ionicons name="lock-closed" size={9} color={c.textFaint} />
           <Text style={styles.lockText}>Premium</Text>
         </View>
       )}
@@ -56,13 +59,13 @@ function CollectionRow({ icon, label, count, badge, locked, comingSoon, onPress 
         </View>
       )}
       {!locked && !comingSoon && (
-        <Ionicons name="chevron-forward" size={15} color="#2A2A2A" />
+        <Ionicons name="chevron-forward" size={15} color={c.textFaint} />
       )}
     </TouchableOpacity>
   );
 }
 
-function PlaylistItem({ playlist, onPress, onLongPress }) {
+function PlaylistItem({ styles, c, playlist, onPress, onLongPress }) {
   return (
     <TouchableOpacity
       style={styles.itemRow}
@@ -78,12 +81,12 @@ function PlaylistItem({ playlist, onPress, onLongPress }) {
         <Text style={styles.itemTitle}>{playlist.name}</Text>
         <Text style={styles.itemSub}>{playlist.songs?.length || 0} songs · Playlist</Text>
       </View>
-      <Ionicons name="chevron-forward" size={15} color="#2A2A2A" />
+      <Ionicons name="chevron-forward" size={15} color={c.textFaint} />
     </TouchableOpacity>
   );
 }
 
-function ArtistItem({ artist, onPress }) {
+function ArtistItem({ styles, c, artist, onPress }) {
   return (
     <TouchableOpacity style={styles.itemRow} onPress={onPress} activeOpacity={0.75}>
       <View style={styles.artistArt}>
@@ -95,33 +98,72 @@ function ArtistItem({ artist, onPress }) {
         <Text style={styles.itemTitle}>{artist.name}</Text>
         <Text style={styles.itemSub}>{artist.genre || 'Artist'}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={15} color="#2A2A2A" />
+      <Ionicons name="chevron-forward" size={15} color={c.textFaint} />
     </TouchableOpacity>
   );
 }
 
-function SongItem({ song, index, onPress }) {
+function SongItem({ styles, c, song, index, onPress }) {
+  const art = useArtwork(song);
   return (
     <TouchableOpacity style={styles.itemRow} onPress={onPress} activeOpacity={0.75}>
       <Text style={styles.songIdx}>{index + 1}</Text>
       <View style={styles.itemArt}>
-        {song.imageUrl
-          ? <Image source={{ uri: song.imageUrl }} style={styles.itemArtImage} />
+        {art
+          ? <Image source={{ uri: art }} style={styles.itemArtImage} />
           : <Text style={styles.itemEmoji}>{song.emoji || '🎵'}</Text>}
       </View>
       <View style={styles.itemInfo}>
         <Text style={styles.itemTitle}>{song.title}</Text>
         <Text style={styles.itemSub}>{song.artist}</Text>
       </View>
-      <Ionicons name="play" size={13} color="#333" />
+      <Ionicons name="play" size={13} color={c.textFaint} />
     </TouchableOpacity>
   );
 }
 
-function EmptyState({ icon, title, sub, action, onAction }) {
+function DetailSongRow({ styles, c, song, index, onPress }) {
+  const art = useArtwork(song);
+  return (
+    <TouchableOpacity style={styles.detailSongRow} onPress={onPress} activeOpacity={0.75}>
+      <Text style={styles.detailSongIdx}>{index + 1}</Text>
+      <View style={styles.detailSongArt}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.detailSongImage} />
+          : <Text style={styles.itemEmoji}>{song.emoji || '🎵'}</Text>}
+      </View>
+      <View style={styles.itemInfo}>
+        <Text style={styles.itemTitle}>{song.title}</Text>
+        <Text style={styles.itemSub}>{song.artist}</Text>
+      </View>
+      <Ionicons name="play-circle-outline" size={24} color={c.textFaint} />
+    </TouchableOpacity>
+  );
+}
+
+function AlbumCard({ styles, c, album, onPress }) {
+  // Album is a group of a user's songs by artist; use its own art, else the
+  // artist's real photo, else the first song's cover.
+  const artistPhoto = useArtistImage(album?.name);
+  const songCover = useArtwork(album?.songs?.[0]);
+  const img = album?.imageUrl || artistPhoto || songCover;
+  return (
+    <TouchableOpacity style={styles.albumCard} onPress={onPress} activeOpacity={0.8}>
+      <View style={styles.albumArt}>
+        {img
+          ? <Image source={{ uri: img }} style={styles.albumArtImg} />
+          : <Text style={styles.albumEmoji}>{album.emoji}</Text>}
+      </View>
+      <Text style={styles.albumName} numberOfLines={1}>{album.name}</Text>
+      <Text style={styles.albumCount}>{album.songs.length} {album.songs.length === 1 ? 'song' : 'songs'}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function EmptyState({ styles, c, icon, title, sub, action, onAction }) {
   return (
     <View style={styles.emptyState}>
-      <Ionicons name={icon} size={44} color="#1E1E1E" />
+      <Ionicons name={icon} size={44} color={c.border} />
       <Text style={styles.emptyTitle}>{title}</Text>
       {sub ? <Text style={styles.emptySub}>{sub}</Text> : null}
       {action && (
@@ -133,11 +175,11 @@ function EmptyState({ icon, title, sub, action, onAction }) {
   );
 }
 
-function DrillHeader({ title, count, onBack, onAction, actionIcon }) {
+function DrillHeader({ styles, c, title, count, onBack, onAction, actionIcon }) {
   return (
     <View style={styles.drillHeader}>
       <TouchableOpacity style={styles.drillBackBtn} onPress={onBack} activeOpacity={0.75}>
-        <Ionicons name="arrow-back" size={20} color="#fff" />
+        <Ionicons name="arrow-back" size={20} color={c.icon} />
       </TouchableOpacity>
       <View style={styles.drillTitleWrap}>
         <Text style={styles.drillTitle}>{title}</Text>
@@ -145,7 +187,7 @@ function DrillHeader({ title, count, onBack, onAction, actionIcon }) {
       </View>
       {actionIcon ? (
         <TouchableOpacity style={styles.drillBackBtn} onPress={onAction} activeOpacity={0.75}>
-          <Ionicons name={actionIcon} size={20} color="#fff" />
+          <Ionicons name={actionIcon} size={20} color={c.icon} />
         </TouchableOpacity>
       ) : (
         <View style={{ width: 38 }} />
@@ -154,7 +196,7 @@ function DrillHeader({ title, count, onBack, onAction, actionIcon }) {
   );
 }
 
-function AddArtistSheet({ visible, value, onChangeText, onSubmit, onClose }) {
+function AddArtistSheet({ styles, c, visible, value, onChangeText, onSubmit, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.overlay}>
@@ -164,7 +206,7 @@ function AddArtistSheet({ visible, value, onChangeText, onSubmit, onClose }) {
           <TextInput
             style={styles.sheetInput}
             placeholder="Type artist name…"
-            placeholderTextColor="#333"
+            placeholderTextColor={c.textFaint}
             value={value}
             onChangeText={onChangeText}
             autoFocus
@@ -182,23 +224,38 @@ function AddArtistSheet({ visible, value, onChangeText, onSubmit, onClose }) {
   );
 }
 
-function PlaylistDetailModal({ visible, playlist, onClose, onPlaySong }) {
+function PlaylistDetailModal({ styles, c, visible, playlist, onClose, onPlaySong, onDelete }) {
   if (!playlist) return null;
+  const canDelete = onDelete && !playlist.isLikedSongs;
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete Playlist',
+      `Delete "${playlist.name}"? This can't be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => { onDelete(playlist.id); onClose(); } },
+      ]
+    );
+  };
   return (
     <Modal visible={visible} animationType="slide">
       <View style={styles.detailContainer}>
         <View style={styles.detailHeader}>
           <TouchableOpacity style={styles.drillBackBtn} onPress={onClose}>
-            <Ionicons name="chevron-down" size={22} color="#fff" />
+            <Ionicons name="chevron-down" size={22} color={c.icon} />
           </TouchableOpacity>
           <Text style={styles.detailHeaderTitle} numberOfLines={1}>{playlist.name}</Text>
-          <View style={{ width: 38 }} />
+          {canDelete ? (
+            <TouchableOpacity style={styles.drillBackBtn} onPress={confirmDelete}>
+              <Ionicons name="trash-outline" size={20} color={c.danger} />
+            </TouchableOpacity>
+          ) : <View style={{ width: 38 }} />}
         </View>
 
         <View style={styles.detailHero}>
           <View style={styles.detailHeroArt}>
             {playlist.isLikedSongs
-              ? <Ionicons name="heart" size={54} color="#fff" />
+              ? <Ionicons name="heart" size={54} color={c.icon} />
               : playlist.imageUrl
                 ? <Image source={{ uri: playlist.imageUrl }} style={styles.detailHeroImage} />
                 : <Text style={{ fontSize: 54 }}>{playlist.emoji}</Text>}
@@ -210,14 +267,14 @@ function PlaylistDetailModal({ visible, playlist, onClose, onPlaySong }) {
               style={styles.detailPlayAll}
               onPress={() => { onClose(); onPlaySong(playlist.songs[0], playlist.songs, 0); }}
               activeOpacity={0.8}>
-              <Ionicons name="play" size={15} color="#000" />
+              <Ionicons name="play" size={15} color={c.accentText} />
               <Text style={styles.detailPlayAllText}>Play All</Text>
             </TouchableOpacity>
           )}
         </View>
 
         {(!playlist.songs || playlist.songs.length === 0) ? (
-          <EmptyState
+          <EmptyState styles={styles} c={c}
             icon="musical-notes-outline"
             title="No songs yet"
             sub={playlist.isLikedSongs
@@ -229,22 +286,11 @@ function PlaylistDetailModal({ visible, playlist, onClose, onPlaySong }) {
             data={playlist.songs}
             keyExtractor={(item, i) => `${item.id}_${i}`}
             renderItem={({ item, index }) => (
-              <TouchableOpacity
-                style={styles.detailSongRow}
+              <DetailSongRow styles={styles} c={c}
+                song={item}
+                index={index}
                 onPress={() => { onClose(); onPlaySong(item, playlist.songs, index); }}
-                activeOpacity={0.75}>
-                <Text style={styles.detailSongIdx}>{index + 1}</Text>
-                <View style={styles.detailSongArt}>
-                  {item.imageUrl
-                    ? <Image source={{ uri: item.imageUrl }} style={styles.detailSongImage} />
-                    : <Text style={styles.itemEmoji}>{item.emoji || '🎵'}</Text>}
-                </View>
-                <View style={styles.itemInfo}>
-                  <Text style={styles.itemTitle}>{item.title}</Text>
-                  <Text style={styles.itemSub}>{item.artist}</Text>
-                </View>
-                <Ionicons name="play-circle-outline" size={24} color="#333" />
-              </TouchableOpacity>
+              />
             )}
             contentContainerStyle={{ paddingBottom: 100 }}
           />
@@ -262,6 +308,8 @@ export default function LibraryScreen({ navigation }) {
     recentlyPlayed, createPlaylist, deletePlaylist, addFollowedArtist,
     loadAndPlay, canCreatePlaylist, FREE_SONGS_PER_PLAYLIST, createdSongs, downloadedSongs,
   } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
 
   // "Downloads" = songs the user actually downloaded, split into videos
   // (have a videoUrl) and audio.
@@ -297,6 +345,8 @@ export default function LibraryScreen({ navigation }) {
   const [newArtistName, setNewArtistName] = useState('');
   const [sortBy, setSortBy] = useState('added');
   const [drillSearch, setDrillSearch] = useState('');
+  const [searchMode, setSearchMode] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
 
   const userPlaylists2 = userPlaylists.filter(p => !p.isLikedSongs);
 
@@ -342,21 +392,77 @@ export default function LibraryScreen({ navigation }) {
     return uniqueFollowed.filter(a => a.name.toLowerCase().includes(q));
   }, [uniqueFollowed, drillSearch]);
 
-  const filteredRecent = useMemo(() => {
-    if (!drillSearch.trim()) return recentlyPlayed;
-    const q = drillSearch.toLowerCase();
-    return recentlyPlayed.filter(s =>
-      s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
-    );
-  }, [recentlyPlayed, drillSearch]);
+  // The sort pills used to be inert in the song drilldowns: only the name-based
+  // lists above read `sortBy`, so tapping a pill restyled it and reordered nothing.
+  // likedSongs and recentlyPlayed are both stored newest-first, which makes "Added"
+  // the natural order — keeping it as the default preserves what users see today.
+  // "Recent" means play recency, which only recentlyPlayed records, so anything
+  // never played sorts last.
+  const recencyRank = useMemo(() => {
+    const rank = new Map();
+    recentlyPlayed.forEach((s, i) => rank.set(s.id, i));
+    return rank;
+  }, [recentlyPlayed]);
 
-  const filteredLiked = useMemo(() => {
-    if (!drillSearch.trim()) return likedSongs;
-    const q = drillSearch.toLowerCase();
-    return likedSongs.filter(s =>
-      s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
-    );
-  }, [likedSongs, drillSearch]);
+  const sortSongs = (list) => {
+    if (sortBy === 'alpha') {
+      return [...list].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    }
+    if (sortBy === 'recent') {
+      const at = (s) => (recencyRank.has(s.id) ? recencyRank.get(s.id) : Infinity);
+      return [...list].sort((a, b) => at(a) - at(b));
+    }
+    return list;
+  };
+
+  const matchesDrill = (song) => {
+    const q = drillSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (song.title || '').toLowerCase().includes(q) ||
+           (song.artist || '').toLowerCase().includes(q);
+  };
+
+  const filteredRecent = useMemo(
+    () => sortSongs(recentlyPlayed.filter(matchesDrill)),
+    [recentlyPlayed, drillSearch, sortBy, recencyRank]
+  );
+
+  const filteredLiked = useMemo(
+    () => sortSongs(likedSongs.filter(matchesDrill)),
+    [likedSongs, drillSearch, sortBy, recencyRank]
+  );
+
+  // ── In-library search ─────────────────────────────────────────────────────
+  // Searches only what the user already has. The Search tab covers the whole
+  // catalog; this covers the library, so neither entry point here navigates away.
+  const librarySongPool = useMemo(() => {
+    const seen = new Set();
+    const pool = [];
+    [...likedSongs, ...recentlyPlayed, ...downloadedSongs, ...createdSongs].forEach((s) => {
+      if (s && !seen.has(s.id)) { seen.add(s.id); pool.push(s); }
+    });
+    return pool;
+  }, [likedSongs, recentlyPlayed, downloadedSongs, createdSongs]);
+
+  // null (rather than empty groups) distinguishes "no query yet" from "no matches".
+  const searchResults = useMemo(() => {
+    const q = librarySearch.trim().toLowerCase();
+    if (!q) return null;
+    const has = (value) => (value || '').toLowerCase().includes(q);
+    return {
+      songs: librarySongPool.filter((s) => has(s.title) || has(s.artist)),
+      playlists: userPlaylists2.filter((p) => has(p.name)),
+      artists: [...favArtists, ...uniqueFollowed].filter((a) => has(a.name)),
+      albums: albums.filter((al) => has(al.name)),
+    };
+  }, [librarySearch, librarySongPool, userPlaylists2, favArtists, uniqueFollowed, albums]);
+
+  const resultCount = searchResults
+    ? searchResults.songs.length + searchResults.playlists.length +
+      searchResults.artists.length + searchResults.albums.length
+    : 0;
+
+  const exitSearch = () => { setSearchMode(false); setLibrarySearch(''); };
 
   const handleAddArtist = () => {
     const name = newArtistName.trim();
@@ -374,7 +480,7 @@ export default function LibraryScreen({ navigation }) {
         'Free members get one playlist. Upgrade to Premium for unlimited playlists.',
         [
           { text: 'Not Now', style: 'cancel' },
-          { text: 'Go Premium 💎', onPress: () => navigation.navigate('Premium') },
+          { text: 'Go Premium', onPress: () => navigation.navigate('Premium') },
         ]
       );
       return;
@@ -409,11 +515,11 @@ export default function LibraryScreen({ navigation }) {
     <View style={styles.drillToolbar}>
       {/* Search input */}
       <View style={styles.drillSearchBar}>
-        <Ionicons name="search" size={15} color="#444" />
+        <Ionicons name="search" size={15} color={c.textFaint} />
         <TextInput
           style={styles.drillSearchInput}
           placeholder="Search…"
-          placeholderTextColor="#333"
+          placeholderTextColor={c.textFaint}
           value={drillSearch}
           onChangeText={setDrillSearch}
           autoCorrect={false}
@@ -421,7 +527,7 @@ export default function LibraryScreen({ navigation }) {
         />
         {drillSearch.length > 0 && (
           <TouchableOpacity onPress={() => setDrillSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close-circle" size={15} color="#444" />
+            <Ionicons name="close-circle" size={15} color={c.textFaint} />
           </TouchableOpacity>
         )}
       </View>
@@ -450,7 +556,7 @@ export default function LibraryScreen({ navigation }) {
   if (drilldownView === 'liked') {
     return (
       <View style={styles.container}>
-        <DrillHeader
+        <DrillHeader styles={styles} c={c}
           title="Liked Songs"
           count={likedSongs.length}
           onBack={exitDrill}
@@ -458,14 +564,14 @@ export default function LibraryScreen({ navigation }) {
         {renderDrillToolbar()}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.drillScroll}>
           {filteredLiked.length === 0 ? (
-            <EmptyState
+            <EmptyState styles={styles} c={c}
               icon="heart-outline"
               title={drillSearch ? 'No matches' : 'No liked songs yet'}
               sub={drillSearch ? 'Try a different search' : 'Tap the heart on any song to save it here'}
             />
           ) : (
             filteredLiked.map((song, idx) => (
-              <SongItem
+              <SongItem styles={styles} c={c}
                 key={`liked_${song.id}_${idx}`}
                 song={song}
                 index={idx}
@@ -483,7 +589,7 @@ export default function LibraryScreen({ navigation }) {
   if (drilldownView === 'playlists') {
     return (
       <View style={styles.container}>
-        <DrillHeader
+        <DrillHeader styles={styles} c={c}
           title="Playlists"
           count={userPlaylists2.length}
           onBack={exitDrill}
@@ -493,7 +599,7 @@ export default function LibraryScreen({ navigation }) {
         {renderDrillToolbar()}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.drillScroll}>
           {filteredPlaylists.length === 0 ? (
-            <EmptyState
+            <EmptyState styles={styles} c={c}
               icon="musical-notes-outline"
               title={drillSearch ? 'No matches' : 'No playlists yet'}
               sub={drillSearch
@@ -504,7 +610,7 @@ export default function LibraryScreen({ navigation }) {
             />
           ) : (
             filteredPlaylists.map(pl => (
-              <PlaylistItem
+              <PlaylistItem styles={styles} c={c}
                 key={pl.id}
                 playlist={pl}
                 onPress={() => openPlaylist(pl)}
@@ -524,11 +630,12 @@ export default function LibraryScreen({ navigation }) {
           <View style={{ height: 120 }} />
         </ScrollView>
 
-        <PlaylistDetailModal
+        <PlaylistDetailModal styles={styles} c={c}
           visible={showPlaylistDetail}
           playlist={selectedPlaylist}
           onClose={() => setShowPlaylistDetail(false)}
           onPlaySong={openSong}
+          onDelete={deletePlaylist}
         />
       </View>
     );
@@ -539,7 +646,7 @@ export default function LibraryScreen({ navigation }) {
     const noResults = filteredFavArtists.length === 0 && filteredFollowedArtists.length === 0;
     return (
       <View style={styles.container}>
-        <DrillHeader
+        <DrillHeader styles={styles} c={c}
           title="Artists"
           count={totalArtistCount}
           onBack={exitDrill}
@@ -549,7 +656,7 @@ export default function LibraryScreen({ navigation }) {
         {renderDrillToolbar()}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.drillScroll}>
           {noResults ? (
-            <EmptyState
+            <EmptyState styles={styles} c={c}
               icon="person-outline"
               title={drillSearch ? 'No matches' : 'No artists yet'}
               sub={drillSearch ? 'Try a different name' : 'Tap + to follow an artist'}
@@ -563,7 +670,7 @@ export default function LibraryScreen({ navigation }) {
                     <Text style={styles.artistGroupLabel}>Favourite Artists</Text>
                   </View>
                   {filteredFavArtists.map(a => (
-                    <ArtistItem
+                    <ArtistItem styles={styles} c={c}
                       key={`fav_${a.id || a.name}`}
                       artist={a}
                       onPress={() => navigation.navigate('Artist', { artist: a })}
@@ -579,7 +686,7 @@ export default function LibraryScreen({ navigation }) {
                     <Text style={styles.artistGroupLabel}>Following</Text>
                   </View>
                   {filteredFollowedArtists.map(a => (
-                    <ArtistItem
+                    <ArtistItem styles={styles} c={c}
                       key={`fol_${a.id || a.name}`}
                       artist={a}
                       onPress={() => navigation.navigate('Artist', { artist: a })}
@@ -591,7 +698,7 @@ export default function LibraryScreen({ navigation }) {
               {/* Prompt to follow more when only onboarding picks exist */}
               {uniqueFollowed.length === 0 && filteredFavArtists.length > 0 && !drillSearch && (
                 <View style={styles.artistFollowHint}>
-                  <Ionicons name="add-circle-outline" size={18} color="#333" />
+                  <Ionicons name="add-circle-outline" size={18} color={c.textFaint} />
                   <Text style={styles.artistFollowHintText}>Tap + to follow more artists</Text>
                 </View>
               )}
@@ -600,7 +707,7 @@ export default function LibraryScreen({ navigation }) {
           <View style={{ height: 120 }} />
         </ScrollView>
 
-        <AddArtistSheet
+        <AddArtistSheet styles={styles} c={c}
           visible={showAddArtist}
           value={newArtistName}
           onChangeText={setNewArtistName}
@@ -615,7 +722,7 @@ export default function LibraryScreen({ navigation }) {
   if (drilldownView === 'recent') {
     return (
       <View style={styles.container}>
-        <DrillHeader
+        <DrillHeader styles={styles} c={c}
           title="Recently Played"
           count={recentlyPlayed.length}
           onBack={exitDrill}
@@ -623,14 +730,14 @@ export default function LibraryScreen({ navigation }) {
         {renderDrillToolbar()}
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.drillScroll}>
           {filteredRecent.length === 0 ? (
-            <EmptyState
+            <EmptyState styles={styles} c={c}
               icon="time-outline"
               title={drillSearch ? 'No matches' : 'Nothing played yet'}
               sub={drillSearch ? 'Try a different search' : 'Songs you play will appear here'}
             />
           ) : (
             filteredRecent.map((song, idx) => (
-              <SongItem
+              <SongItem styles={styles} c={c}
                 key={`rec_${song.id}_${idx}`}
                 song={song}
                 index={idx}
@@ -649,10 +756,10 @@ export default function LibraryScreen({ navigation }) {
     const empty = downloadVideos.length === 0 && downloadAudios.length === 0;
     return (
       <View style={styles.container}>
-        <DrillHeader title="Downloads" count={downloadPool.length} onBack={exitDrill} />
+        <DrillHeader styles={styles} c={c} title="Downloads" count={downloadPool.length} onBack={exitDrill} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.drillScroll}>
           {empty ? (
-            <EmptyState
+            <EmptyState styles={styles} c={c}
               icon="cloud-download-outline"
               title="No downloads yet"
               sub="Songs and music videos you save will appear here"
@@ -665,7 +772,7 @@ export default function LibraryScreen({ navigation }) {
               </View>
               {downloadVideos.length > 0 ? (
                 downloadVideos.map((song, idx) => (
-                  <SongItem
+                  <SongItem styles={styles} c={c}
                     key={`dlv_${song.id}_${idx}`}
                     song={song}
                     index={idx}
@@ -674,7 +781,7 @@ export default function LibraryScreen({ navigation }) {
                 ))
               ) : (
                 <View style={styles.artistFollowHint}>
-                  <Ionicons name="videocam-outline" size={18} color="#333" />
+                  <Ionicons name="videocam-outline" size={18} color={c.textFaint} />
                   <Text style={styles.artistFollowHintText}>No downloaded videos yet</Text>
                 </View>
               )}
@@ -685,7 +792,7 @@ export default function LibraryScreen({ navigation }) {
               </View>
               {downloadAudios.length > 0 ? (
                 downloadAudios.map((song, idx) => (
-                  <SongItem
+                  <SongItem styles={styles} c={c}
                     key={`dla_${song.id}_${idx}`}
                     song={song}
                     index={idx}
@@ -694,7 +801,7 @@ export default function LibraryScreen({ navigation }) {
                 ))
               ) : (
                 <View style={styles.artistFollowHint}>
-                  <Ionicons name="musical-notes-outline" size={18} color="#333" />
+                  <Ionicons name="musical-notes-outline" size={18} color={c.textFaint} />
                   <Text style={styles.artistFollowHintText}>No downloaded songs yet</Text>
                 </View>
               )}
@@ -710,17 +817,17 @@ export default function LibraryScreen({ navigation }) {
   if (drilldownView === 'aimusic') {
     return (
       <View style={styles.container}>
-        <DrillHeader title="AI Music" count={createdSongs.length} onBack={exitDrill} />
+        <DrillHeader styles={styles} c={c} title="AI Music" count={createdSongs.length} onBack={exitDrill} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.drillScroll}>
           {createdSongs.length === 0 ? (
-            <EmptyState
+            <EmptyState styles={styles} c={c}
               icon="sparkles-outline"
               title="No AI music yet"
               sub="Create a song in Create → Generate AI Song and it'll appear here"
             />
           ) : (
             createdSongs.map((song, idx) => (
-              <SongItem
+              <SongItem styles={styles} c={c}
                 key={`ai_${song.id}_${idx}`}
                 song={song}
                 index={idx}
@@ -738,10 +845,10 @@ export default function LibraryScreen({ navigation }) {
   if (drilldownView === 'albums') {
     return (
       <View style={styles.container}>
-        <DrillHeader title="Albums" count={albums.length} onBack={exitDrill} />
+        <DrillHeader styles={styles} c={c} title="Albums" count={albums.length} onBack={exitDrill} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.drillScroll}>
           {albums.length === 0 ? (
-            <EmptyState
+            <EmptyState styles={styles} c={c}
               icon="albums-outline"
               title="No albums yet"
               sub="Play or like songs and they'll group into albums here"
@@ -749,26 +856,19 @@ export default function LibraryScreen({ navigation }) {
           ) : (
             <View style={styles.albumGrid}>
               {albums.map(al => (
-                <TouchableOpacity key={al.id} style={styles.albumCard} onPress={() => openPlaylist(al)} activeOpacity={0.8}>
-                  <View style={styles.albumArt}>
-                    {al.imageUrl
-                      ? <Image source={{ uri: al.imageUrl }} style={styles.albumArtImg} />
-                      : <Text style={styles.albumEmoji}>{al.emoji}</Text>}
-                  </View>
-                  <Text style={styles.albumName} numberOfLines={1}>{al.name}</Text>
-                  <Text style={styles.albumCount}>{al.songs.length} {al.songs.length === 1 ? 'song' : 'songs'}</Text>
-                </TouchableOpacity>
+                <AlbumCard styles={styles} c={c} key={al.id} album={al} onPress={() => openPlaylist(al)} />
               ))}
             </View>
           )}
           <View style={{ height: 120 }} />
         </ScrollView>
 
-        <PlaylistDetailModal
+        <PlaylistDetailModal styles={styles} c={c}
           visible={showPlaylistDetail}
           playlist={selectedPlaylist}
           onClose={() => setShowPlaylistDetail(false)}
           onPlaySong={openSong}
+          onDelete={deletePlaylist}
         />
       </View>
     );
@@ -779,92 +879,180 @@ export default function LibraryScreen({ navigation }) {
     <View style={styles.container}>
 
       <View style={styles.header}>
-        <Text style={styles.title}>Your Library</Text>
-        <TouchableOpacity
-          style={styles.headerIconBtn}
-          onPress={() => navigation.navigate('Search')}
-          activeOpacity={0.8}>
-          <Ionicons name="search" size={19} color="#aaa" />
-        </TouchableOpacity>
+        {searchMode ? (
+          <>
+            <View style={styles.headerSearchBar}>
+              <Ionicons name="search" size={16} color={c.textFaint} />
+              <TextInput
+                style={styles.headerSearchInput}
+                placeholder="Search your library"
+                placeholderTextColor={c.textFaint}
+                value={librarySearch}
+                onChangeText={setLibrarySearch}
+                autoFocus
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+              />
+              {librarySearch.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setLibrarySearch('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close-circle" size={16} color={c.textFaint} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity onPress={exitSearch} activeOpacity={0.7}>
+              <Text style={styles.searchCancel}>Cancel</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.title}>Your Library</Text>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => setSearchMode(true)}
+              activeOpacity={0.8}>
+              <Ionicons name="search" size={19} color={c.textDim} />
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
+      {searchMode ? (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.mainScroll}
+          keyboardShouldPersistTaps="handled">
+          {!searchResults ? (
+            <EmptyState styles={styles} c={c}
+              icon="search-outline"
+              title="Search your library"
+              sub="Find songs, playlists, artists and albums you've saved."
+            />
+          ) : resultCount === 0 ? (
+            <EmptyState styles={styles} c={c}
+              icon="sad-outline"
+              title="No results"
+              sub={`Nothing in your library matches "${librarySearch.trim()}".`}
+            />
+          ) : (
+            <>
+              {searchResults.songs.length > 0 && (
+                <>
+                  <LibSectionHeader styles={styles} c={c} title={`Songs · ${searchResults.songs.length}`} />
+                  <View style={styles.collectionBlock}>
+                    {searchResults.songs.map((song, i) => (
+                      <SongItem styles={styles} c={c}
+                        key={song.id}
+                        song={song}
+                        index={i}
+                        onPress={() => openSong(song, searchResults.songs, i)}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {searchResults.playlists.length > 0 && (
+                <>
+                  <LibSectionHeader styles={styles} c={c} title={`Playlists · ${searchResults.playlists.length}`} />
+                  <View style={styles.collectionBlock}>
+                    {searchResults.playlists.map((playlist) => (
+                      <PlaylistItem styles={styles} c={c}
+                        key={playlist.id}
+                        playlist={playlist}
+                        onPress={() => openPlaylist(playlist)}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {searchResults.artists.length > 0 && (
+                <>
+                  <LibSectionHeader styles={styles} c={c} title={`Artists · ${searchResults.artists.length}`} />
+                  <View style={styles.collectionBlock}>
+                    {searchResults.artists.map((artist) => (
+                      <ArtistItem styles={styles} c={c}
+                        key={artist.id || artist.name}
+                        artist={artist}
+                        onPress={() => navigation.navigate('Artist', { artist })}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {searchResults.albums.length > 0 && (
+                <>
+                  <LibSectionHeader styles={styles} c={c} title={`Albums · ${searchResults.albums.length}`} />
+                  <View style={styles.collectionBlock}>
+                    {searchResults.albums.map((album) => (
+                      <PlaylistItem styles={styles} c={c}
+                        key={album.id}
+                        playlist={album}
+                        onPress={() => openPlaylist(album)}
+                      />
+                    ))}
+                  </View>
+                </>
+              )}
+            </>
+          )}
+          <View style={{ height: 120 }} />
+        </ScrollView>
+      ) : (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.mainScroll}>
 
         {/* ── Quick access row ── */}
         <View style={styles.quickRow}>
-          <QuickCard
+          <QuickCard styles={styles} c={c}
             icon="heart"
             label="Liked Songs"
             count={likedSongs.length}
+            image={likedSongs.find(s => s.imageUrl)?.imageUrl}
             onPress={() => setDrilldownView('liked')}
           />
-          <QuickCard
+          <QuickCard styles={styles} c={c}
             icon="time-outline"
             label="Recent"
             count={recentlyPlayed.length}
+            image={recentlyPlayed.find(s => s.imageUrl)?.imageUrl}
             onPress={() => setDrilldownView('recent')}
           />
-          <QuickCard
+          <QuickCard styles={styles} c={c}
             icon="cloud-download-outline"
             label="Downloads"
             count={downloadPool.length}
+            image={downloadPool.find(s => s.imageUrl)?.imageUrl}
             onPress={() => setDrilldownView('downloads')}
           />
         </View>
 
-        {/* ── My Collection ── */}
-        <LibSectionHeader title="My Collection" />
+        {/* ── Library — the browseable collections (quick cards cover Liked / Recent / Downloads) ── */}
+        <LibSectionHeader styles={styles} c={c} title="Library" />
 
         <View style={styles.collectionBlock}>
-          <CollectionRow
-            icon="musical-notes-outline"
-            label="Liked Songs"
-            count={likedSongs.length}
-            onPress={() => setDrilldownView('liked')}
-          />
-          <CollectionRow
+          <CollectionRow styles={styles} c={c}
             icon="list-outline"
             label="Playlists"
             count={userPlaylists2.length}
             onPress={handlePlaylists}
           />
-          <CollectionRow
+          <CollectionRow styles={styles} c={c}
             icon="albums-outline"
             label="Albums"
             count={albums.length}
             onPress={() => setDrilldownView('albums')}
           />
-          <CollectionRow
+          <CollectionRow styles={styles} c={c}
             icon="person-outline"
             label="Artists"
             count={totalArtistCount}
             onPress={() => setDrilldownView('artists')}
           />
-          <CollectionRow
-            icon="cloud-download-outline"
-            label="Downloads"
-            count={downloadPool.length}
-            onPress={() => setDrilldownView('downloads')}
-          />
-        </View>
-
-        {/* ── Personal Content ── */}
-        <LibSectionHeader title="Personal" />
-
-        <View style={styles.collectionBlock}>
-          <CollectionRow
-            icon="time-outline"
-            label="Recently Played"
-            count={recentlyPlayed.length}
-            onPress={() => setDrilldownView('recent')}
-          />
-          <CollectionRow
-            icon="heart-outline"
-            label="Favorites"
-            count={likedSongs.length}
-            onPress={() => setDrilldownView('liked')}
-          />
-          <CollectionRow
+          <CollectionRow styles={styles} c={c}
             icon="sparkles-outline"
             label="AI Music"
             count={createdSongs.length}
@@ -872,39 +1060,16 @@ export default function LibraryScreen({ navigation }) {
           />
         </View>
 
-        {/* ── Organization ── */}
-        <LibSectionHeader title="Organization" />
-
-        <View style={styles.collectionBlock}>
-          <CollectionRow
-            icon="search-outline"
-            label="Search Library"
-            onPress={() => navigation.navigate('Search')}
-          />
-          <CollectionRow
-            icon="filter-outline"
-            label="Sort & Filter"
-            onPress={() => {
-              Alert.alert('Sort & Filter', 'Choose how to sort your library', [
-                { text: 'Recently Added', onPress: () => setSortBy('added') },
-                { text: 'Recently Played', onPress: () => setSortBy('recent') },
-                { text: 'A – Z', onPress: () => setSortBy('alpha') },
-                { text: 'Cancel', style: 'cancel' },
-              ]);
-            }}
-          />
-        </View>
-
         {/* ── Account ── */}
-        <LibSectionHeader title="Account" />
+        <LibSectionHeader styles={styles} c={c} title="Account" />
 
         <View style={styles.collectionBlock}>
-          <CollectionRow
+          <CollectionRow styles={styles} c={c}
             icon="person-circle-outline"
             label="Profile"
             onPress={() => navigation.navigate('Profile')}
           />
-          <CollectionRow
+          <CollectionRow styles={styles} c={c}
             icon={isPremium ? 'diamond-outline' : 'star-outline'}
             label={isPremium ? 'Manage Premium' : 'Upgrade to Premium'}
             onPress={() => navigation.navigate('Premium')}
@@ -913,13 +1078,15 @@ export default function LibraryScreen({ navigation }) {
 
         <View style={{ height: 120 }} />
       </ScrollView>
+      )}
 
       {/* Playlist detail modal — accessible from main view */}
-      <PlaylistDetailModal
+      <PlaylistDetailModal styles={styles} c={c}
         visible={showPlaylistDetail}
         playlist={selectedPlaylist}
         onClose={() => setShowPlaylistDetail(false)}
         onPlaySong={openSong}
+          onDelete={deletePlaylist}
       />
     </View>
   );
@@ -927,8 +1094,8 @@ export default function LibraryScreen({ navigation }) {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
 
   // Header
   header: {
@@ -939,67 +1106,78 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 18,
   },
-  title: { fontSize: 28, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
+  title: { fontSize: 28, fontWeight: '900', color: c.text, letterSpacing: -0.5 },
   headerIconBtn: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: '#111', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#1E1E1E',
+    backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: c.border,
   },
+  headerSearchBar: {
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: c.surface, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+    borderWidth: 1, borderColor: c.border,
+  },
+  headerSearchInput: { flex: 1, color: c.text, fontSize: 14, fontWeight: '600', padding: 0 },
+  searchCancel: { color: c.textDim, fontSize: 14, fontWeight: '800', marginLeft: 14 },
 
   mainScroll: { paddingBottom: 20 },
 
   // Quick cards row
   quickRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 28 },
   quickCard: {
-    flex: 1, backgroundColor: '#111', borderRadius: 12,
+    flex: 1, backgroundColor: c.surface, borderRadius: 12,
     paddingVertical: 16, paddingHorizontal: 12, alignItems: 'center',
-    borderWidth: 1, borderColor: '#1A1A1A', gap: 8,
+    borderWidth: 1, borderColor: c.border, gap: 8,
   },
   quickIconWrap: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
   },
-  quickLabel: { color: '#ccc', fontSize: 11.5, fontWeight: '800', textAlign: 'center' },
-  quickCount: { color: '#fff', fontSize: 17, fontWeight: '900' },
+  quickCardImage: { width: '100%', height: '100%' },
+  quickLabel: { color: c.textDim, fontSize: 11.5, fontWeight: '800', textAlign: 'center' },
+  quickCount: { color: c.text, fontSize: 17, fontWeight: '900' },
 
   // Section headers
   libSectionHeader: {
     paddingHorizontal: 20, paddingTop: 4, paddingBottom: 10,
   },
-  libSectionTitle: { fontSize: 12, fontWeight: '900', color: '#8A8A8A', letterSpacing: 1.5, textTransform: 'uppercase' },
+  libSectionTitle: { fontSize: 12, fontWeight: '900', color: c.textDim, letterSpacing: 1.5, textTransform: 'uppercase' },
 
   // Collection block
   collectionBlock: {
     marginHorizontal: 20, marginBottom: 24,
-    backgroundColor: '#111', borderRadius: 14,
-    borderWidth: 1, borderColor: '#1A1A1A',
+    backgroundColor: c.surface, borderRadius: 14,
+    borderWidth: 1, borderColor: c.border,
     overflow: 'hidden',
   },
   collRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 15,
-    borderBottomWidth: 1, borderBottomColor: '#161616',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border,
     gap: 14,
   },
   collIconWrap: {
     width: 32, height: 32, borderRadius: 8,
-    backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
   },
   collInfo: { flex: 1 },
-  collLabel: { color: '#fff', fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
-  collLabelMuted: { color: '#666' },
-  collCount: { color: '#9A9A9A', fontSize: 12.5, marginTop: 3, fontWeight: '700' },
+  collLabel: { color: c.text, fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
+  collLabelMuted: { color: c.textFaint },
+  collCount: { color: c.textDim, fontSize: 12.5, marginTop: 3, fontWeight: '700' },
   lockBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#1A1A1A', paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 8, borderWidth: 1, borderColor: '#2A2A2A',
+    backgroundColor: c.elevated, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 8, borderWidth: 1, borderColor: c.borderStrong,
   },
-  lockText: { color: '#888', fontSize: 10, fontWeight: '800' },
+  lockText: { color: c.textDim, fontSize: 10, fontWeight: '800' },
   soonBadge: {
-    backgroundColor: '#1A1A1A', paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 8, borderWidth: 1, borderColor: '#2A2A2A',
+    backgroundColor: c.elevated, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 8, borderWidth: 1, borderColor: c.borderStrong,
   },
-  soonText: { color: '#888', fontSize: 10, fontWeight: '800' },
+  soonText: { color: c.textDim, fontSize: 10, fontWeight: '800' },
 
   // Drilldown
   drillHeader: {
@@ -1008,34 +1186,34 @@ const styles = StyleSheet.create({
   },
   drillBackBtn: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: '#111', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#1A1A1A',
+    backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: c.border,
   },
   drillTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  drillTitle: { fontSize: 21, fontWeight: '900', color: '#fff', letterSpacing: -0.3 },
+  drillTitle: { fontSize: 21, fontWeight: '900', color: c.text, letterSpacing: -0.3 },
   drillCount: {
-    fontSize: 12, fontWeight: '800', color: '#ccc',
-    backgroundColor: '#1A1A1A', paddingHorizontal: 7, paddingVertical: 2,
+    fontSize: 12, fontWeight: '800', color: c.textDim,
+    backgroundColor: c.elevated, paddingHorizontal: 7, paddingVertical: 2,
     borderRadius: 8,
   },
 
   drillToolbar: { paddingHorizontal: 20, marginBottom: 14, gap: 12 },
   drillSearchBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#111', borderRadius: 10,
+    backgroundColor: c.surface, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 10, gap: 8,
-    borderWidth: 1, borderColor: '#1A1A1A',
+    borderWidth: 1, borderColor: c.border,
   },
-  drillSearchInput: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '600' },
+  drillSearchInput: { flex: 1, color: c.text, fontSize: 14, fontWeight: '600' },
   sortRow: { flexDirection: 'row', gap: 8 },
   sortPill: {
     paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 16, backgroundColor: '#111',
-    borderWidth: 1, borderColor: '#1A1A1A',
+    borderRadius: 16, backgroundColor: c.surface,
+    borderWidth: 1, borderColor: c.border,
   },
-  sortPillActive: { backgroundColor: '#fff', borderColor: '#fff' },
-  sortPillText: { color: '#9A9A9A', fontSize: 12, fontWeight: '800' },
-  sortPillTextActive: { color: '#000' },
+  sortPillActive: { backgroundColor: c.accent, borderColor: c.accent },
+  sortPillText: { color: c.textDim, fontSize: 12, fontWeight: '800' },
+  sortPillTextActive: { color: c.accentText },
 
   drillScroll: { paddingHorizontal: 20 },
 
@@ -1044,111 +1222,111 @@ const styles = StyleSheet.create({
   albumCard: { width: '48%', marginBottom: 18 },
   albumArt: {
     width: '100%', aspectRatio: 1, borderRadius: 12,
-    backgroundColor: '#111', alignItems: 'center', justifyContent: 'center',
-    overflow: 'hidden', marginBottom: 8, borderWidth: 1, borderColor: '#1A1A1A',
+    backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden', marginBottom: 8, borderWidth: 1, borderColor: c.border,
   },
   albumArtImg: { width: '100%', height: '100%' },
   albumEmoji: { fontSize: 46 },
-  albumName: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: -0.2 },
-  albumCount: { color: '#9A9A9A', fontSize: 12, fontWeight: '600', marginTop: 2 },
+  albumName: { color: c.text, fontSize: 14, fontWeight: '800', letterSpacing: -0.2 },
+  albumCount: { color: c.textDim, fontSize: 12, fontWeight: '600', marginTop: 2 },
 
   // Generic item row
   itemRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#111', borderRadius: 10,
+    backgroundColor: c.surface, borderRadius: 10,
     padding: 12, marginBottom: 8, gap: 12,
   },
   itemArt: {
     width: 52, height: 52, borderRadius: 10,
-    backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
   artistArt: {
     width: 52, height: 52, borderRadius: 26,
-    backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#2A2A2A', overflow: 'hidden',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: c.borderStrong, overflow: 'hidden',
   },
   itemEmoji: { fontSize: 24 },
   itemArtImage: { width: '100%', height: '100%', borderRadius: 10 },
   artistArtImage: { width: '100%', height: '100%', borderRadius: 24 },
   itemInfo: { flex: 1 },
-  itemTitle: { color: '#fff', fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
-  itemSub: { color: '#9A9A9A', fontSize: 12.5, marginTop: 3, fontWeight: '700' },
-  songIdx: { color: '#888', fontSize: 13, fontWeight: '800', width: 22, textAlign: 'center' },
+  itemTitle: { color: c.text, fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },
+  itemSub: { color: c.textDim, fontSize: 12.5, marginTop: 3, fontWeight: '700' },
+  songIdx: { color: c.textDim, fontSize: 13, fontWeight: '800', width: 22, textAlign: 'center' },
 
   // Empty state
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: 10 },
-  emptyTitle: { color: '#bbb', fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
-  emptySub: { color: '#777', fontSize: 13, textAlign: 'center', lineHeight: 20, paddingHorizontal: 30, fontWeight: '600' },
+  emptyTitle: { color: c.textDim, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  emptySub: { color: c.textFaint, fontSize: 13, textAlign: 'center', lineHeight: 20, paddingHorizontal: 30, fontWeight: '600' },
   emptyActionBtn: {
     marginTop: 8, paddingHorizontal: 22, paddingVertical: 11,
-    backgroundColor: '#fff', borderRadius: 20,
+    backgroundColor: c.accent, borderRadius: 20,
   },
-  emptyActionText: { color: '#000', fontSize: 13, fontWeight: '800' },
+  emptyActionText: { color: c.accentText, fontSize: 13, fontWeight: '800' },
 
   // Add artist sheet
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#111', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 28, paddingBottom: 48, borderTopWidth: 1, borderColor: '#1E1E1E',
+    backgroundColor: c.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 28, paddingBottom: 48, borderTopWidth: 1, borderColor: c.border,
   },
-  sheetHandle: { width: 36, height: 3, backgroundColor: '#222', borderRadius: 2, alignSelf: 'center', marginBottom: 24 },
-  sheetTitle: { fontSize: 20, fontWeight: '900', color: '#fff', marginBottom: 18, textAlign: 'center', letterSpacing: -0.3 },
+  sheetHandle: { width: 36, height: 3, backgroundColor: c.borderStrong, borderRadius: 2, alignSelf: 'center', marginBottom: 24 },
+  sheetTitle: { fontSize: 20, fontWeight: '900', color: c.text, marginBottom: 18, textAlign: 'center', letterSpacing: -0.3 },
   sheetInput: {
-    backgroundColor: '#1A1A1A', color: '#fff',
+    backgroundColor: c.elevated, color: c.text,
     paddingHorizontal: 16, paddingVertical: 14,
     borderRadius: 12, fontSize: 15, marginBottom: 14,
-    borderWidth: 1, borderColor: '#2A2A2A',
+    borderWidth: 1, borderColor: c.borderStrong,
   },
-  sheetBtn: { backgroundColor: '#fff', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 10 },
-  sheetBtnText: { color: '#000', fontSize: 15.5, fontWeight: '900', letterSpacing: -0.2 },
+  sheetBtn: { backgroundColor: c.accent, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 10 },
+  sheetBtnText: { color: c.accentText, fontSize: 15.5, fontWeight: '900', letterSpacing: -0.2 },
   sheetCancel: { paddingVertical: 12, alignItems: 'center' },
-  sheetCancelText: { color: '#888', fontSize: 14, fontWeight: '700' },
+  sheetCancelText: { color: c.textDim, fontSize: 14, fontWeight: '700' },
 
   // Artist group headers
   artistGroupHeader: {
     paddingTop: 20, paddingBottom: 8,
   },
   artistGroupLabel: {
-    fontSize: 11, fontWeight: '800', color: '#8A8A8A',
+    fontSize: 11, fontWeight: '800', color: c.textDim,
     letterSpacing: 1.4, textTransform: 'uppercase',
   },
   artistFollowHint: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 18, justifyContent: 'center',
   },
-  artistFollowHintText: { color: '#888', fontSize: 13, fontWeight: '600' },
+  artistFollowHintText: { color: c.textDim, fontSize: 13, fontWeight: '600' },
 
   // Playlist detail modal
-  detailContainer: { flex: 1, backgroundColor: '#000', paddingTop: 56 },
+  detailContainer: { flex: 1, backgroundColor: c.bg, paddingTop: 56 },
   detailHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, marginBottom: 24,
   },
-  detailHeaderTitle: { color: '#fff', fontSize: 17, fontWeight: '800', flex: 1, textAlign: 'center', marginHorizontal: 8, letterSpacing: -0.2 },
+  detailHeaderTitle: { color: c.text, fontSize: 17, fontWeight: '800', flex: 1, textAlign: 'center', marginHorizontal: 8, letterSpacing: -0.2 },
   detailHero: { alignItems: 'center', paddingHorizontal: 20, marginBottom: 28 },
   detailHeroArt: {
     width: 150, height: 150, borderRadius: 18,
-    backgroundColor: '#111', alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16, borderWidth: 1, borderColor: '#1E1E1E',
+    backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 16, borderWidth: 1, borderColor: c.border,
   },
   detailHeroImage: { width: '100%', height: '100%', borderRadius: 18 },
-  detailHeroName: { color: '#fff', fontSize: 23, fontWeight: '900', marginBottom: 4, letterSpacing: -0.3 },
-  detailHeroCount: { color: '#9A9A9A', fontSize: 13, fontWeight: '700', marginBottom: 16 },
+  detailHeroName: { color: c.text, fontSize: 23, fontWeight: '900', marginBottom: 4, letterSpacing: -0.3 },
+  detailHeroCount: { color: c.textDim, fontSize: 13, fontWeight: '700', marginBottom: 16 },
   detailPlayAll: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#fff', paddingHorizontal: 22, paddingVertical: 11,
+    backgroundColor: c.accent, paddingHorizontal: 22, paddingVertical: 11,
     borderRadius: 20,
   },
-  detailPlayAllText: { color: '#000', fontSize: 14, fontWeight: '800' },
+  detailPlayAllText: { color: c.accentText, fontSize: 14, fontWeight: '800' },
   detailSongRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 12, gap: 12,
-    borderBottomWidth: 1, borderBottomColor: '#111',
+    borderBottomWidth: 1, borderBottomColor: c.border,
   },
-  detailSongIdx: { color: '#888', fontSize: 13, width: 22, textAlign: 'center', fontWeight: '800' },
+  detailSongIdx: { color: c.textDim, fontSize: 13, width: 22, textAlign: 'center', fontWeight: '800' },
   detailSongArt: {
-    width: 48, height: 48, backgroundColor: '#111',
+    width: 48, height: 48, backgroundColor: c.surface,
     borderRadius: 10, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },

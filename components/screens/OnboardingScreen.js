@@ -110,6 +110,8 @@ const FEATURED_IDS = ['1', '2', '3', '4', '5', '17', '26', '30', '38', '44', '22
 
 export default function OnboardingScreen({ navigation }) {
   const { setFavouriteArtists } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
   const [selectedArtists, setSelectedArtists] = useState([]);
   const [search, setSearch] = useState('');
   const [customArtists, setCustomArtists] = useState([]);
@@ -204,7 +206,7 @@ export default function OnboardingScreen({ navigation }) {
   const ArtistRow = ({ artist }) => {
     const isSelected = !!selectedArtists.find(a => a.id === artist.id);
     const selIdx = selectedArtists.findIndex(a => a.id === artist.id);
-    const color = GENRE_COLORS[artist.genre] || '#1DB954';
+    const color = GENRE_COLORS[artist.genre] || '#888';
     return (
       <TouchableOpacity
         style={[styles.resultRow, isSelected && { backgroundColor: color + '14', borderColor: color + '60' }]}
@@ -223,7 +225,7 @@ export default function OnboardingScreen({ navigation }) {
           </View>
         ) : (
           <View style={styles.resultAdd}>
-            <Ionicons name="add" size={18} color="#555" />
+            <Ionicons name="add" size={18} color={c.textFaint} />
           </View>
         )}
       </TouchableOpacity>
@@ -233,7 +235,7 @@ export default function OnboardingScreen({ navigation }) {
   const ArtistCard = ({ artist }) => {
     const isSelected = !!selectedArtists.find(a => a.id === artist.id);
     const selIdx = selectedArtists.findIndex(a => a.id === artist.id);
-    const color = GENRE_COLORS[artist.genre] || '#1DB954';
+    const color = GENRE_COLORS[artist.genre] || '#888';
     return (
       <TouchableOpacity
         style={[styles.card, isSelected && { borderColor: color, backgroundColor: color + '18' }]}
@@ -264,7 +266,7 @@ export default function OnboardingScreen({ navigation }) {
       <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.stepRow}>
           <View style={styles.stepPill}>
-            <Ionicons name="musical-notes" size={12} color="#1DB954" />
+            <Ionicons name="musical-notes" size={12} color={c.text} />
             <Text style={styles.stepText}>Step 1 of 1</Text>
           </View>
           <Text style={styles.selectedCountText}>{selectedArtists.length}/3 selected</Text>
@@ -281,7 +283,7 @@ export default function OnboardingScreen({ navigation }) {
         <View style={styles.slotsRow}>
           {[0, 1, 2].map(i => {
             const artist = selectedArtists[i];
-            const color = artist ? (GENRE_COLORS[artist.genre] || '#1DB954') : '#2A2A2A';
+            const color = artist ? (GENRE_COLORS[artist.genre] || '#888') : '#2A2A2A';
             return (
               <TouchableOpacity
                 key={i}
@@ -293,11 +295,11 @@ export default function OnboardingScreen({ navigation }) {
                     <Text style={styles.slotEmoji}>{artist.emoji}</Text>
                     <Text style={styles.slotName} numberOfLines={1}>{artist.name.split(' ')[0]}</Text>
                     <View style={styles.slotRemove}>
-                      <Ionicons name="close" size={9} color="#fff" />
+                      <Ionicons name="close" size={9} color={c.icon} />
                     </View>
                   </>
                 ) : (
-                  <Ionicons name="add" size={18} color="#333" />
+                  <Ionicons name="add" size={18} color={c.textFaint} />
                 )}
               </TouchableOpacity>
             );
@@ -308,7 +310,7 @@ export default function OnboardingScreen({ navigation }) {
       {/* Search bar */}
       <View style={styles.searchWrapper}>
         <View style={[styles.searchBar, searchFocused && styles.searchBarFocused]}>
-          <Ionicons name="search-outline" size={18} color={searchFocused ? '#1DB954' : '#555'} />
+          <Ionicons name="search-outline" size={18} color={searchFocused ? c.text : c.textFaint} />
           <TextInput
             ref={searchRef}
             style={styles.searchInput}
@@ -326,7 +328,7 @@ export default function OnboardingScreen({ navigation }) {
             <TouchableOpacity
               onPress={() => { setSearch(''); searchRef.current?.focus(); }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close-circle" size={18} color="#555" />
+              <Ionicons name="close-circle" size={18} color={c.textFaint} />
             </TouchableOpacity>
           )}
         </View>
@@ -344,13 +346,13 @@ export default function OnboardingScreen({ navigation }) {
           {canAddCustom && (
             <TouchableOpacity style={styles.addRow} onPress={handleAddCustom} activeOpacity={0.75}>
               <View style={styles.addRowIcon}>
-                <Ionicons name="add" size={22} color="#1DB954" />
+                <Ionicons name="add" size={22} color={c.text} />
               </View>
               <View style={styles.addRowInfo}>
                 <Text style={styles.addRowName} numberOfLines={1}>"{typedName}"</Text>
                 <Text style={styles.addRowSub}>Add as custom artist</Text>
               </View>
-              <Ionicons name="arrow-forward-circle-outline" size={22} color="#1DB954" />
+              <Ionicons name="arrow-forward-circle-outline" size={22} color={c.text} />
             </TouchableOpacity>
           )}
 
@@ -367,7 +369,7 @@ export default function OnboardingScreen({ navigation }) {
           {/* No catalog matches */}
           {noResults && (
             <View style={styles.noResults}>
-              <Ionicons name="search-outline" size={36} color="#2A2A2A" />
+              <Ionicons name="search-outline" size={36} color={c.textFaint} />
               <Text style={styles.noResultsTitle}>Not in our catalog yet</Text>
               <Text style={styles.noResultsSub}>
                 Use the button above to add them — your feed will be personalised around your picks.
@@ -410,19 +412,19 @@ export default function OnboardingScreen({ navigation }) {
           activeOpacity={0.88}
           disabled={loading}>
           {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={c.icon} size="small" />
           ) : selectedArtists.length < 3 ? (
             <>
-              <Ionicons name="musical-notes-outline" size={18} color="#555" />
+              <Ionicons name="musical-notes-outline" size={18} color={c.textFaint} />
               <Text style={styles.ctaBtnTextMuted}>
                 {`Select ${3 - selectedArtists.length} more artist${3 - selectedArtists.length !== 1 ? 's' : ''}`}
               </Text>
             </>
           ) : (
             <>
-              <Ionicons name="headset-outline" size={18} color="#fff" />
+              <Ionicons name="headset-outline" size={18} color={c.icon} />
               <Text style={styles.ctaBtnText}>Start Listening</Text>
-              <Ionicons name="arrow-forward" size={18} color="#fff" />
+              <Ionicons name="arrow-forward" size={18} color={c.icon} />
             </>
           )}
         </TouchableOpacity>
@@ -431,75 +433,75 @@ export default function OnboardingScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
 
   header: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 12 },
 
   stepRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  stepPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1DB95420', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  stepText: { color: '#1DB954', fontSize: 12, fontWeight: '700' },
-  selectedCountText: { color: '#555', fontSize: 12, fontWeight: '600' },
+  stepPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: c.elevated, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  stepText: { color: c.text, fontSize: 12, fontWeight: '700' },
+  selectedCountText: { color: c.textFaint, fontSize: 12, fontWeight: '600' },
 
-  progressTrack: { height: 3, backgroundColor: '#1A1A1A', borderRadius: 2, marginBottom: 20, overflow: 'hidden' },
-  progressFill: { height: 3, backgroundColor: '#1DB954', borderRadius: 2 },
+  progressTrack: { height: 3, backgroundColor: c.elevated, borderRadius: 2, marginBottom: 20, overflow: 'hidden' },
+  progressFill: { height: 3, backgroundColor: c.accent, borderRadius: 2 },
 
-  title: { fontSize: 26, fontWeight: '900', color: '#fff', marginBottom: 6 },
-  subtitle: { fontSize: 14, color: '#666', marginBottom: 18, lineHeight: 20 },
+  title: { fontSize: 26, fontWeight: '900', color: c.text, marginBottom: 6 },
+  subtitle: { fontSize: 14, color: c.textFaint, marginBottom: 18, lineHeight: 20 },
 
   slotsRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   slot: { flex: 1, height: 64, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   slotEmoji: { fontSize: 20, marginBottom: 2 },
-  slotName: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  slotName: { color: c.text, fontSize: 10, fontWeight: '700' },
   slotRemove: { position: 'absolute', top: -5, right: -5, width: 16, height: 16, borderRadius: 8, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#0A0A0A' },
 
   searchWrapper: { paddingHorizontal: 20, marginBottom: 10, marginTop: 14 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#161616', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, gap: 10, borderWidth: 1.5, borderColor: '#2A2A2A' },
-  searchBarFocused: { borderColor: '#1DB954' },
-  searchInput: { flex: 1, color: '#fff', fontSize: 15 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, gap: 10, borderWidth: 1.5, borderColor: c.borderStrong },
+  searchBarFocused: { borderColor: c.accent },
+  searchInput: { flex: 1, color: c.text, fontSize: 15 },
 
   /* Search results */
   resultsList: { flex: 1, paddingHorizontal: 20 },
-  resultsLabel: { color: '#555', fontSize: 12, fontWeight: '600', marginBottom: 10, marginTop: 4 },
-  resultRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#161616', borderRadius: 14, padding: 12, marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent' },
+  resultsLabel: { color: c.textFaint, fontSize: 12, fontWeight: '600', marginBottom: 10, marginTop: 4 },
+  resultRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.surface, borderRadius: 14, padding: 12, marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent' },
   resultAvatar: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   resultEmoji: { fontSize: 22 },
   resultInfo: { flex: 1 },
-  resultName: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 3 },
+  resultName: { color: c.text, fontSize: 15, fontWeight: '700', marginBottom: 3 },
   resultGenre: { fontSize: 12, fontWeight: '600' },
   resultCheck: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  resultCheckNum: { color: '#fff', fontSize: 13, fontWeight: '900' },
-  resultAdd: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center' },
+  resultCheckNum: { color: c.text, fontSize: 13, fontWeight: '900' },
+  resultAdd: { width: 30, height: 30, borderRadius: 15, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' },
 
   noResults: { alignItems: 'center', paddingTop: 48, paddingHorizontal: 20 },
-  noResultsTitle: { color: '#fff', fontSize: 17, fontWeight: '800', marginTop: 14, marginBottom: 8 },
-  noResultsSub: { color: '#555', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1DB954', paddingVertical: 13, paddingHorizontal: 24, borderRadius: 12, justifyContent: 'center' },
-  addBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  noResultsTitle: { color: c.text, fontSize: 17, fontWeight: '800', marginTop: 14, marginBottom: 8 },
+  noResultsSub: { color: c.textFaint, fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.accent, paddingVertical: 13, paddingHorizontal: 24, borderRadius: 12, justifyContent: 'center' },
+  addBtnText: { color: c.text, fontSize: 14, fontWeight: '700' },
 
-  addRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0d2b1a', borderRadius: 14, padding: 12, marginBottom: 12, borderWidth: 1.5, borderColor: '#1DB95440' },
-  addRowIcon: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#1DB95420', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  addRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.elevated, borderRadius: 14, padding: 12, marginBottom: 12, borderWidth: 1.5, borderColor: c.border },
+  addRowIcon: { width: 46, height: 46, borderRadius: 23, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   addRowInfo: { flex: 1 },
-  addRowName: { color: '#fff', fontSize: 15, fontWeight: '700', marginBottom: 2 },
-  addRowSub: { color: '#1DB954', fontSize: 12, fontWeight: '600' },
+  addRowName: { color: c.text, fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  addRowSub: { color: c.text, fontSize: 12, fontWeight: '600' },
 
   /* Browse grid */
   grid: { paddingHorizontal: 16 },
-  browseLabel: { color: '#555', fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 12, paddingHorizontal: 2 },
+  browseLabel: { color: c.textFaint, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 12, paddingHorizontal: 2 },
   gridInner: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 
-  card: { width: '30.5%', backgroundColor: '#161616', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 8, alignItems: 'center', borderWidth: 2, borderColor: 'transparent', position: 'relative' },
-  avatarCircle: { width: 52, height: 52, backgroundColor: '#2A2A2A', borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  card: { width: '30.5%', backgroundColor: c.surface, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 8, alignItems: 'center', borderWidth: 2, borderColor: 'transparent', position: 'relative' },
+  avatarCircle: { width: 52, height: 52, backgroundColor: c.elevated, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   avatarEmoji: { fontSize: 24 },
-  cardName: { color: '#fff', fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 6 },
+  cardName: { color: c.text, fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 6 },
   genreTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   genreText: { fontSize: 9, fontWeight: '700' },
   badge: { position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#0A0A0A' },
-  badgeNum: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  badgeNum: { color: c.text, fontSize: 11, fontWeight: '900' },
 
-  bottomBar: { paddingHorizontal: 20, paddingBottom: 44, paddingTop: 12, backgroundColor: '#0A0A0A' },
-  ctaBtn: { backgroundColor: '#1DB954', paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, shadowColor: '#1DB954', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 8 },
-  ctaBtnDisabled: { backgroundColor: '#161616', shadowOpacity: 0 },
-  ctaBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  ctaBtnTextMuted: { color: '#444', fontSize: 15, fontWeight: '600' },
+  bottomBar: { paddingHorizontal: 20, paddingBottom: 44, paddingTop: 12, backgroundColor: c.bg },
+  ctaBtn: { backgroundColor: c.accent, paddingVertical: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, shadowColor: c.bg, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 8 },
+  ctaBtnDisabled: { backgroundColor: c.surface, shadowOpacity: 0 },
+  ctaBtnText: { color: c.text, fontSize: 16, fontWeight: '800' },
+  ctaBtnTextMuted: { color: c.textFaint, fontSize: 15, fontWeight: '600' },
 });

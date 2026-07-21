@@ -57,6 +57,8 @@ export default function VisualizerScreen({ navigation }) {
     miniPlayerDuration,
     isPremium,
   } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
 
   const [videoMode, setVideoMode] = useState(false);
   const pausedForVideo = useRef(false);
@@ -147,9 +149,9 @@ export default function VisualizerScreen({ navigation }) {
     return (
       <View style={[styles.container, styles.emptyContainer]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={20} color="#fff" />
+          <Ionicons name="arrow-back" size={20} color={c.icon} />
         </TouchableOpacity>
-        <Ionicons name="musical-notes-outline" size={56} color="#1E1E1E" />
+        <Ionicons name="musical-notes-outline" size={56} color={c.border} />
         <Text style={styles.emptyTitle}>Nothing Playing</Text>
         <Text style={styles.emptySub}>Play a song to see the visualizer</Text>
       </View>
@@ -168,7 +170,7 @@ export default function VisualizerScreen({ navigation }) {
           shouldPlay
         />
         <TouchableOpacity style={styles.videoBack} onPress={exitVideoMode} activeOpacity={0.8}>
-          <Ionicons name="arrow-back" size={20} color="#fff" />
+          <Ionicons name="arrow-back" size={20} color={c.icon} />
         </TouchableOpacity>
         <View style={styles.videoInfo}>
           <Text style={styles.videoTitle} numberOfLines={1}>{currentTrack.title}</Text>
@@ -184,7 +186,7 @@ export default function VisualizerScreen({ navigation }) {
       {/* Top bar */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
-          <Ionicons name="arrow-back" size={20} color="#fff" />
+          <Ionicons name="arrow-back" size={20} color={c.icon} />
         </TouchableOpacity>
         <Text style={styles.topLabel}>Visualizer</Text>
         <View style={{ width: 38 }} />
@@ -255,15 +257,15 @@ export default function VisualizerScreen({ navigation }) {
             playPreviousInQueue(false);
           }}
           activeOpacity={0.75}>
-          <Ionicons name="play-skip-back" size={24} color={isPremium ? '#fff' : '#2A2A2A'} />
+          <Ionicons name="play-skip-back" size={24} color={isPremium ? c.icon : c.textFaint} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.playBtn} onPress={playPause} activeOpacity={0.85}>
-          <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={28} color="#000" />
+          <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={28} color={c.accentText} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.ctrlBtn} onPress={playNextInQueue} activeOpacity={0.75}>
-          <Ionicons name="play-skip-forward" size={24} color="#fff" />
+          <Ionicons name="play-skip-forward" size={24} color={c.icon} />
         </TouchableOpacity>
       </View>
 
@@ -281,8 +283,8 @@ export default function VisualizerScreen({ navigation }) {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 14 },
 
   topBar: {
@@ -301,7 +303,7 @@ const styles = StyleSheet.create({
   topLabel: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.35)', letterSpacing: 1.5, textTransform: 'uppercase' },
 
   songInfo: { alignItems: 'center', paddingHorizontal: 32, marginTop: 16, marginBottom: 24, gap: 6 },
-  songTitle: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center' },
+  songTitle: { fontSize: 22, fontWeight: '900', color: c.text, textAlign: 'center' },
   songArtist: { fontSize: 14, color: 'rgba(255,255,255,0.45)', textAlign: 'center' },
   genrePill: {
     backgroundColor: 'rgba(255,255,255,0.07)',
@@ -347,9 +349,9 @@ const styles = StyleSheet.create({
   bar: {
     width: Math.max(BAR_W, 2),
     borderRadius: 2,
-    backgroundColor: '#fff',
+    backgroundColor: c.accent,
   },
-  barMirror: { backgroundColor: '#fff' },
+  barMirror: { backgroundColor: c.accent },
 
   progressSection: { paddingHorizontal: 32, marginBottom: 32 },
   progressTrack: {
@@ -374,7 +376,7 @@ const styles = StyleSheet.create({
   ctrlBtnLocked: { opacity: 0.3 },
   playBtn: {
     width: 68, height: 68, borderRadius: 34,
-    backgroundColor: '#fff',
+    backgroundColor: c.accent,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -386,7 +388,7 @@ const styles = StyleSheet.create({
   watchVideoText: { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '600' },
 
   // Full-screen video player
-  videoContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center' },
+  videoContainer: { flex: 1, backgroundColor: c.bg, justifyContent: 'center' },
   videoPlayer: { width: SCREEN_W, height: SCREEN_W * (9 / 16) },
   videoBack: {
     position: 'absolute', top: 56, left: 20,
@@ -397,10 +399,10 @@ const styles = StyleSheet.create({
   videoInfo: {
     position: 'absolute', bottom: 60, left: 20, right: 20,
   },
-  videoTitle: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 4 },
+  videoTitle: { color: c.text, fontSize: 18, fontWeight: '800', marginBottom: 4 },
   videoArtist: { color: 'rgba(255,255,255,0.55)', fontSize: 14 },
 
   // Empty state
-  emptyTitle: { color: '#333', fontSize: 18, fontWeight: '700', marginTop: 8 },
-  emptySub: { color: '#222', fontSize: 13 },
+  emptyTitle: { color: c.textFaint, fontSize: 18, fontWeight: '700', marginTop: 8 },
+  emptySub: { color: c.textFaint, fontSize: 13 },
 });

@@ -1,6 +1,22 @@
-// Change this to your deployed backend URL before going live
+import { NativeModules } from 'react-native';
+
+// Set this to the deployed backend before going live
 // e.g. 'https://sonara-backend.railway.app/api'
-const API_BASE = 'http://localhost:5000/api';
+const PROD_API_BASE = '';
+
+const LAN_IP = /^\d{1,3}(\.\d{1,3}){3}$/;
+
+// A phone cannot reach the dev machine's "localhost" — that resolves to the phone
+// itself. Metro already knows the dev machine's address, so derive it from the
+// bundler URL rather than hardcoding an IP that changes with every network.
+// Tunnel mode serves an ngrok hostname, which cannot proxy port 5000, so anything
+// that isn't a LAN IP falls back to localhost (correct for the simulator).
+function devApiBase() {
+  const host = (NativeModules.SourceCode?.scriptURL || '').split('://')[1]?.split(/[:/]/)[0];
+  return host && LAN_IP.test(host) ? `http://${host}:5000/api` : 'http://localhost:5000/api';
+}
+
+const API_BASE = !__DEV__ && PROD_API_BASE ? PROD_API_BASE : devApiBase();
 
 const api = {
   // ── Users ────────────────────────────────────────────────────────

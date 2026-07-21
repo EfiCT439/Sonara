@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
+import { generateSongLyrics } from '../../services/lyrics';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ const GEN_BAR_PARAMS = Array.from({ length: NUM_GEN_BARS }, (_, i) => {
 
 // ─── Module-scope sub-components (keyboard-bug rule) ─────────────────────────
 
-function GenreChip({ genre, selected, onPress }) {
+function GenreChip({ styles, c, genre, selected, onPress }) {
   return (
     <TouchableOpacity
       style={[styles.genreChip, selected && styles.genreChipActive]}
@@ -53,7 +54,7 @@ function GenreChip({ genre, selected, onPress }) {
   );
 }
 
-function SaveSheet({ visible, playlists, onSaveToExisting, onCreateNew, onClose }) {
+function SaveSheet({ styles, c, visible, playlists, onSaveToExisting, onCreateNew, onClose }) {
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
 
@@ -83,10 +84,10 @@ function SaveSheet({ visible, playlists, onSaveToExisting, onCreateNew, onClose 
                 onPress={() => setCreating(true)}
                 activeOpacity={0.75}>
                 <View style={styles.createNewIcon}>
-                  <Ionicons name="add" size={18} color="#888" />
+                  <Ionicons name="add" size={18} color={c.textDim} />
                 </View>
                 <Text style={styles.createNewText}>Create New Playlist</Text>
-                <Ionicons name="chevron-forward" size={15} color="#333" />
+                <Ionicons name="chevron-forward" size={15} color={c.textFaint} />
               </TouchableOpacity>
 
               {regularPlaylists.length > 0 && (
@@ -102,7 +103,7 @@ function SaveSheet({ visible, playlists, onSaveToExisting, onCreateNew, onClose 
                         <Text style={styles.playlistPickEmoji}>{pl.emoji}</Text>
                         <Text style={styles.playlistPickName}>{pl.name}</Text>
                         <Text style={styles.playlistPickCount}>{pl.songs?.length || 0}</Text>
-                        <Ionicons name="chevron-forward" size={14} color="#333" />
+                        <Ionicons name="chevron-forward" size={14} color={c.textFaint} />
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -115,7 +116,7 @@ function SaveSheet({ visible, playlists, onSaveToExisting, onCreateNew, onClose 
               <TextInput
                 style={styles.sheetInput}
                 placeholder="e.g. My AI Vibes"
-                placeholderTextColor="#333"
+                placeholderTextColor={c.textFaint}
                 value={newName}
                 onChangeText={setNewName}
                 autoFocus
@@ -128,7 +129,7 @@ function SaveSheet({ visible, playlists, onSaveToExisting, onCreateNew, onClose 
                 <Text style={styles.sheetCreateBtnText}>Create & Save</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.backRow} onPress={reset}>
-                <Ionicons name="arrow-back" size={15} color="#555" />
+                <Ionicons name="arrow-back" size={15} color={c.textFaint} />
                 <Text style={styles.backText}>Back</Text>
               </TouchableOpacity>
             </View>
@@ -147,6 +148,8 @@ function SaveSheet({ visible, playlists, onSaveToExisting, onCreateNew, onClose 
 
 export default function AIGenScreen({ navigation }) {
   const { userPlaylists, createPlaylist, addSongToPlaylist, loadAndPlay, addCreatedSong, updateCreatedSong } = useUser();
+  const { colors: c } = useUser();
+  const styles = makeStyles(c);
 
   // Form state
   const [genre, setGenre] = useState('Afrobeats');
@@ -162,6 +165,8 @@ export default function AIGenScreen({ navigation }) {
   const [showSaveSheet, setShowSaveSheet] = useState(false);
   const [coverUri, setCoverUri] = useState(null); // optional cover art for the generated song
   const [songId, setSongId] = useState(null);     // stable id for the created song
+  const [lyrics, setLyrics] = useState(null);     // { mood, lyrics, text } — generated with the song
+  const [showLyrics, setShowLyrics] = useState(false);
 
   // Generating animation
   const [msgIdx, setMsgIdx] = useState(0);
@@ -214,10 +219,16 @@ export default function AIGenScreen({ navigation }) {
         const id = `ai_${Date.now()}`;
         setSongId(id);
         setAudioUrl(result.audioUrl);
+        // Lyrics are generated alongside the track, from its title/description/genre,
+        // and stored on the song as plain text so the Player's lyrics panel shows them.
+        const generated = generateSongLyrics({
+          title: title.trim(), description: description.trim(), genre,
+        });
+        setLyrics(generated);
         // Save into "created content" → shown under Upload Music
         addCreatedSong({
           id, title: title.trim() || 'Untitled', artist: 'AI Generated',
-          genre, emoji: '✨', audioUrl: result.audioUrl,
+          genre, emoji: '✨', audioUrl: result.audioUrl, lyrics: generated.text,
         });
         setStep('result');
       } else if (result.status === 'failed') {
@@ -276,7 +287,8 @@ export default function AIGenScreen({ navigation }) {
     emoji: '✨',
     audioUrl,
     imageUrl: coverUri || undefined,
-  }), [songId, audioUrl, title, genre, coverUri]);
+    lyrics: lyrics?.text,
+  }), [songId, audioUrl, title, genre, coverUri, lyrics]);
 
   const handlePlay = () => {
     if (!audioUrl) return;
@@ -310,6 +322,8 @@ export default function AIGenScreen({ navigation }) {
     setError(null);
     setCoverUri(null);
     setSongId(null);
+    setLyrics(null);
+    setShowLyrics(false);
   };
 
   // ── Render: FORM ──────────────────────────────────────────────────
@@ -318,7 +332,7 @@ export default function AIGenScreen({ navigation }) {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.75}>
-            <Ionicons name="arrow-back" size={20} color="#fff" />
+            <Ionicons name="arrow-back" size={20} color={c.icon} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>AI Song Generator</Text>
           <View style={{ width: 38 }} />
@@ -327,7 +341,7 @@ export default function AIGenScreen({ navigation }) {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formScroll}>
           {error ? (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle-outline" size={16} color="#888" />
+              <Ionicons name="alert-circle-outline" size={16} color={c.textDim} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
@@ -336,7 +350,7 @@ export default function AIGenScreen({ navigation }) {
           <Text style={styles.fieldLabel}>Genre</Text>
           <View style={styles.genreGrid}>
             {GENRES.map(g => (
-              <GenreChip
+              <GenreChip styles={styles} c={c}
                 key={g}
                 genre={g}
                 selected={genre === g}
@@ -350,7 +364,7 @@ export default function AIGenScreen({ navigation }) {
           <TextInput
             style={styles.textInput}
             placeholder="e.g. Midnight in Lagos"
-            placeholderTextColor="#333"
+            placeholderTextColor={c.textFaint}
             value={title}
             onChangeText={setTitle}
             maxLength={60}
@@ -364,7 +378,7 @@ export default function AIGenScreen({ navigation }) {
             placeholder={
               'Describe what the song is about — the mood, instruments, story, and feeling.\n\ne.g. "An upbeat Afrobeats track about celebrating with friends at night, with talking drum and vibrant rhythm section."'
             }
-            placeholderTextColor="#333"
+            placeholderTextColor={c.textFaint}
             value={description}
             onChangeText={setDescription}
             multiline
@@ -383,7 +397,7 @@ export default function AIGenScreen({ navigation }) {
             onPress={handleGenerate}
             activeOpacity={0.85}
             disabled={!title.trim()}>
-            <Ionicons name="sparkles" size={18} color={title.trim() ? '#000' : '#444'} />
+            <Ionicons name="sparkles" size={18} color={title.trim() ? c.accentText : c.textFaint} />
             <Text style={[styles.generateBtnText, !title.trim() && styles.generateBtnTextDisabled]}>
               Generate Song
             </Text>
@@ -433,7 +447,7 @@ export default function AIGenScreen({ navigation }) {
             <>
               <Image source={{ uri: coverUri }} style={styles.resultArtworkImg} />
               <View style={styles.coverEditBadge}>
-                <Ionicons name="camera" size={13} color="#fff" />
+                <Ionicons name="camera" size={13} color={c.icon} />
               </View>
             </>
           ) : (
@@ -443,21 +457,29 @@ export default function AIGenScreen({ navigation }) {
         <Text style={styles.resultTitle}>{title}</Text>
         <Text style={styles.resultMeta}>AI Generated · {genre} · 30s</Text>
 
+        {lyrics ? (
+          <TouchableOpacity style={styles.lyricsBadge} onPress={() => setShowLyrics(true)} activeOpacity={0.75}>
+            <Ionicons name="text" size={13} color={c.textDim} />
+            <Text style={styles.lyricsBadgeText}>Lyrics generated · {lyrics.mood}</Text>
+            <Ionicons name="chevron-forward" size={13} color={c.textFaint} />
+          </TouchableOpacity>
+        ) : null}
+
         {savedMsg ? (
           <View style={styles.savedBadge}>
-            <Ionicons name="checkmark-circle" size={14} color="#888" />
+            <Ionicons name="checkmark-circle" size={14} color={c.textDim} />
             <Text style={styles.savedText}>{savedMsg}</Text>
           </View>
         ) : null}
       </View>
 
       <TouchableOpacity style={styles.playBtn} onPress={handlePlay} activeOpacity={0.85}>
-        <Ionicons name="play" size={20} color="#000" />
+        <Ionicons name="play" size={20} color={c.accentText} />
         <Text style={styles.playBtnText}>Play Song</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.coverBtn} onPress={handlePickCover} activeOpacity={0.85}>
-        <Ionicons name={coverUri ? 'image' : 'image-outline'} size={18} color="#fff" />
+        <Ionicons name={coverUri ? 'image' : 'image-outline'} size={18} color={c.icon} />
         <Text style={styles.coverBtnText}>{coverUri ? 'Change Cover Art' : 'Upload Cover Art'}</Text>
       </TouchableOpacity>
 
@@ -465,16 +487,46 @@ export default function AIGenScreen({ navigation }) {
         style={styles.saveBtn}
         onPress={() => setShowSaveSheet(true)}
         activeOpacity={0.85}>
-        <Ionicons name="bookmark-outline" size={18} color="#fff" />
+        <Ionicons name="bookmark-outline" size={18} color={c.icon} />
         <Text style={styles.saveBtnText}>Save to Playlist</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.againBtn} onPress={resetForm} activeOpacity={0.75}>
-        <Ionicons name="refresh" size={16} color="#555" />
+        <Ionicons name="refresh" size={16} color={c.textFaint} />
         <Text style={styles.againText}>Generate Another</Text>
       </TouchableOpacity>
 
-      <SaveSheet
+      {/* Lyrics — generated automatically with the song */}
+      <Modal visible={showLyrics} transparent animationType="slide" onRequestClose={() => setShowLyrics(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.lyricsSheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.lyricsSheetHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetTitle2}>{lyrics?.lyrics?.title || title}</Text>
+                {lyrics ? <Text style={styles.lyricsSheetTag}>{lyrics.lyrics.tag}</Text> : null}
+              </View>
+              <TouchableOpacity onPress={() => setShowLyrics(false)} activeOpacity={0.75}>
+                <Ionicons name="close" size={22} color={c.textFaint} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.lyricsScroll}>
+              {lyrics?.lyrics?.sections.map((s, i) => (
+                <View key={i} style={styles.lyricsSection}>
+                  <Text style={styles.lyricsSectionLabel}>{s.label}</Text>
+                  {s.lines.map((line, j) => (
+                    <Text key={j} style={styles.lyricsLine}>{line}</Text>
+                  ))}
+                </View>
+              ))}
+              <Text style={styles.lyricsFootNote}>Generated with your song · edit anytime in your library</Text>
+              <View style={{ height: 30 }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <SaveSheet styles={styles} c={c}
         visible={showSaveSheet}
         playlists={userPlaylists}
         onSaveToExisting={handleSaveToExisting}
@@ -487,8 +539,8 @@ export default function AIGenScreen({ navigation }) {
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.bg },
   centeredContainer: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
 
   // Header
@@ -502,59 +554,59 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: '#111', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#1A1A1A',
+    backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: c.border,
   },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#fff' },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: c.text },
 
   // Form
   formScroll: { paddingHorizontal: 20 },
   fieldLabel: {
-    fontSize: 11, fontWeight: '700', color: '#444',
+    fontSize: 11, fontWeight: '700', color: c.textFaint,
     textTransform: 'uppercase', letterSpacing: 1.3, marginBottom: 12, marginTop: 22,
   },
   genreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
   genreChip: {
     paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: 20, backgroundColor: '#111',
-    borderWidth: 1, borderColor: '#1E1E1E',
+    borderRadius: 20, backgroundColor: c.surface,
+    borderWidth: 1, borderColor: c.border,
   },
-  genreChipActive: { backgroundColor: '#fff', borderColor: '#fff' },
-  genreChipText: { color: '#555', fontSize: 13, fontWeight: '600' },
-  genreChipTextActive: { color: '#000' },
+  genreChipActive: { backgroundColor: c.accent, borderColor: c.accent },
+  genreChipText: { color: c.textFaint, fontSize: 13, fontWeight: '600' },
+  genreChipTextActive: { color: c.accentText },
 
   textInput: {
-    backgroundColor: '#111', color: '#fff',
+    backgroundColor: c.surface, color: c.text,
     paddingHorizontal: 16, paddingVertical: 14,
     borderRadius: 12, fontSize: 15,
-    borderWidth: 1, borderColor: '#1E1E1E',
+    borderWidth: 1, borderColor: c.border,
     marginBottom: 4,
   },
   textArea: { height: 130, paddingTop: 14 },
-  charCount: { color: '#2A2A2A', fontSize: 11, textAlign: 'right', marginBottom: 8 },
+  charCount: { color: c.textFaint, fontSize: 11, textAlign: 'right', marginBottom: 8 },
 
   tipText: {
-    color: '#2A2A2A', fontSize: 12, lineHeight: 18,
+    color: c.textFaint, fontSize: 12, lineHeight: 18,
     marginTop: 6, marginBottom: 28,
   },
 
   generateBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: '#fff', paddingVertical: 16,
+    backgroundColor: c.accent, paddingVertical: 16,
     borderRadius: 14, marginBottom: 14,
   },
-  generateBtnDisabled: { backgroundColor: '#111', borderWidth: 1, borderColor: '#1E1E1E' },
-  generateBtnText: { color: '#000', fontSize: 16, fontWeight: '800' },
-  generateBtnTextDisabled: { color: '#333' },
-  footNote: { color: '#222', fontSize: 11, textAlign: 'center' },
+  generateBtnDisabled: { backgroundColor: c.surface, borderWidth: 1, borderColor: c.border },
+  generateBtnText: { color: c.accentText, fontSize: 16, fontWeight: '800' },
+  generateBtnTextDisabled: { color: c.textFaint },
+  footNote: { color: c.textFaint, fontSize: 11, textAlign: 'center' },
 
   errorBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: '#111', borderRadius: 10,
+    backgroundColor: c.surface, borderRadius: 10,
     padding: 14, marginBottom: 8, marginTop: 8,
-    borderWidth: 1, borderColor: '#1E1E1E',
+    borderWidth: 1, borderColor: c.border,
   },
-  errorText: { color: '#666', fontSize: 13, flex: 1, lineHeight: 18 },
+  errorText: { color: c.textFaint, fontSize: 13, flex: 1, lineHeight: 18 },
 
   // Generating
   genWaveRow: {
@@ -562,28 +614,28 @@ const styles = StyleSheet.create({
     gap: 4, height: 90, marginBottom: 40,
   },
   genBarWrap: { width: 7, height: 90, justifyContent: 'flex-end', alignItems: 'center' },
-  genBar: { width: 5, borderRadius: 3, backgroundColor: '#fff' },
+  genBar: { width: 5, borderRadius: 3, backgroundColor: c.accent },
 
-  genTitle: { fontSize: 18, fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: 4 },
-  genTitle2: { fontSize: 14, color: '#555', textAlign: 'center', marginBottom: 24, fontStyle: 'italic' },
-  genMsg: { fontSize: 14, color: '#444', textAlign: 'center', marginBottom: 10 },
-  genEta: { fontSize: 12, color: '#2A2A2A', textAlign: 'center', marginBottom: 40 },
+  genTitle: { fontSize: 18, fontWeight: '800', color: c.text, textAlign: 'center', marginBottom: 4 },
+  genTitle2: { fontSize: 14, color: c.textFaint, textAlign: 'center', marginBottom: 24, fontStyle: 'italic' },
+  genMsg: { fontSize: 14, color: c.textFaint, textAlign: 'center', marginBottom: 10 },
+  genEta: { fontSize: 12, color: c.textFaint, textAlign: 'center', marginBottom: 40 },
   cancelGenBtn: {
     paddingHorizontal: 24, paddingVertical: 10,
-    borderRadius: 20, borderWidth: 1, borderColor: '#1E1E1E',
+    borderRadius: 20, borderWidth: 1, borderColor: c.border,
   },
-  cancelGenText: { color: '#444', fontSize: 14 },
+  cancelGenText: { color: c.textFaint, fontSize: 14 },
 
   // Result
   resultCard: {
-    width: '100%', backgroundColor: '#111',
+    width: '100%', backgroundColor: c.surface,
     borderRadius: 20, padding: 28,
     alignItems: 'center', marginBottom: 28,
-    borderWidth: 1, borderColor: '#1A1A1A',
+    borderWidth: 1, borderColor: c.border,
   },
   resultArtwork: {
     width: 110, height: 110, borderRadius: 22,
-    backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
     marginBottom: 18, borderWidth: 1, borderColor: '#222', overflow: 'hidden',
   },
   resultArtworkImg: { width: '100%', height: '100%' },
@@ -594,96 +646,123 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
   },
   resultEmoji: { fontSize: 52 },
-  resultTitle: { fontSize: 20, fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: 6 },
-  resultMeta: { fontSize: 13, color: '#444', marginBottom: 14 },
+  resultTitle: { fontSize: 20, fontWeight: '800', color: c.text, textAlign: 'center', marginBottom: 6 },
+  resultMeta: { fontSize: 13, color: c.textFaint, marginBottom: 14 },
   savedBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#1A1A1A', paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: c.elevated, paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 12,
   },
-  savedText: { color: '#666', fontSize: 12, fontWeight: '600' },
+  savedText: { color: c.textFaint, fontSize: 12, fontWeight: '600' },
+
+  lyricsBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: c.elevated, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 12, marginTop: 4,
+    borderWidth: 1, borderColor: '#222',
+  },
+  lyricsBadgeText: { color: c.textDim, fontSize: 12, fontWeight: '700' },
+
+  // Lyrics sheet
+  lyricsSheet: {
+    backgroundColor: c.surface, maxHeight: '82%',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 34,
+    borderTopWidth: 1, borderColor: c.border,
+  },
+  lyricsSheetHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 16 },
+  sheetTitle2: { fontSize: 19, fontWeight: '800', color: c.text },
+  lyricsSheetTag: { color: c.textDim, fontSize: 12, fontWeight: '700', marginTop: 4 },
+  lyricsScroll: { },
+  lyricsSection: { marginBottom: 20 },
+  lyricsSectionLabel: {
+    color: c.textDim, fontSize: 11, fontWeight: '800',
+    textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8,
+  },
+  lyricsLine: { color: c.text, fontSize: 15, lineHeight: 25, fontWeight: '500' },
+  lyricsFootNote: { color: c.textFaint, fontSize: 12, marginTop: 6, fontStyle: 'italic' },
 
   playBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: '#fff', paddingVertical: 15, borderRadius: 14,
+    backgroundColor: c.accent, paddingVertical: 15, borderRadius: 14,
     width: '100%', marginBottom: 12,
   },
-  playBtnText: { color: '#000', fontSize: 16, fontWeight: '800' },
+  playBtnText: { color: c.accentText, fontSize: 16, fontWeight: '800' },
 
   coverBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: '#111', paddingVertical: 14, borderRadius: 14,
+    backgroundColor: c.surface, paddingVertical: 14, borderRadius: 14,
     width: '100%', marginBottom: 12,
-    borderWidth: 1, borderColor: '#1E1E1E',
+    borderWidth: 1, borderColor: c.border,
   },
-  coverBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  coverBtnText: { color: c.text, fontSize: 15, fontWeight: '700' },
 
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: '#111', paddingVertical: 14, borderRadius: 14,
+    backgroundColor: c.surface, paddingVertical: 14, borderRadius: 14,
     width: '100%', marginBottom: 16,
-    borderWidth: 1, borderColor: '#1E1E1E',
+    borderWidth: 1, borderColor: c.border,
   },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  saveBtnText: { color: c.text, fontSize: 15, fontWeight: '700' },
 
   againBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 10,
   },
-  againText: { color: '#444', fontSize: 14 },
+  againText: { color: c.textFaint, fontSize: 14 },
 
   // Save sheet
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
   saveSheet: {
-    backgroundColor: '#111',
+    backgroundColor: c.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 44,
-    borderTopWidth: 1, borderColor: '#1E1E1E',
+    borderTopWidth: 1, borderColor: c.border,
   },
   sheetHandle: {
     width: 36, height: 3, backgroundColor: '#222',
     borderRadius: 2, alignSelf: 'center', marginBottom: 20,
   },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#fff', marginBottom: 20, textAlign: 'center' },
-  sheetLabel: { fontSize: 11, fontWeight: '700', color: '#444', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: c.text, marginBottom: 20, textAlign: 'center' },
+  sheetLabel: { fontSize: 11, fontWeight: '700', color: c.textFaint, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10 },
   sheetInput: {
-    backgroundColor: '#1A1A1A', color: '#fff',
+    backgroundColor: c.elevated, color: c.text,
     paddingHorizontal: 16, paddingVertical: 14,
     borderRadius: 12, fontSize: 15,
-    borderWidth: 1, borderColor: '#2A2A2A', marginBottom: 14,
+    borderWidth: 1, borderColor: c.borderStrong, marginBottom: 14,
   },
   sheetCreateBtn: {
-    backgroundColor: '#fff', paddingVertical: 14,
+    backgroundColor: c.accent, paddingVertical: 14,
     borderRadius: 12, alignItems: 'center', marginBottom: 10,
   },
-  sheetCreateBtnText: { color: '#000', fontSize: 15, fontWeight: '800' },
+  sheetCreateBtnText: { color: c.accentText, fontSize: 15, fontWeight: '800' },
 
   createNewRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#1A1A1A', borderRadius: 12,
+    backgroundColor: c.elevated, borderRadius: 12,
     padding: 14, marginBottom: 16,
     borderWidth: 1, borderColor: '#222',
   },
   createNewIcon: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
   },
-  createNewText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '600' },
+  createNewText: { flex: 1, color: c.text, fontSize: 14, fontWeight: '600' },
 
-  orLabel: { fontSize: 11, color: '#2A2A2A', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
+  orLabel: { fontSize: 11, color: c.textFaint, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
 
   playlistScroll: { maxHeight: 220, marginBottom: 4 },
   playlistPickRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#1A1A1A',
+    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: c.border,
   },
   playlistPickEmoji: { fontSize: 22 },
-  playlistPickName: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '600' },
-  playlistPickCount: { color: '#333', fontSize: 12 },
+  playlistPickName: { flex: 1, color: c.text, fontSize: 14, fontWeight: '600' },
+  playlistPickCount: { color: c.textFaint, fontSize: 12 },
 
   createForm: { marginBottom: 8 },
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, justifyContent: 'center' },
-  backText: { color: '#555', fontSize: 14 },
+  backText: { color: c.textFaint, fontSize: 14 },
   cancelRow: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  cancelText: { color: '#333', fontSize: 14 },
+  cancelText: { color: c.textFaint, fontSize: 14 },
 });
