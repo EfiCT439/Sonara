@@ -43,3 +43,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# YouTube API key (keep private)
+youtubeConfig.js

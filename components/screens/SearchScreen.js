@@ -8,6 +8,7 @@ import { Audio } from 'expo-av';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
 import { searchAudius } from '../../services/audius';
+import { searchYouTube } from '../../services/youtube';
 import { useArtwork } from '../../services/artwork';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -158,6 +159,13 @@ const GENRE_SONGS = {
 };
 
 const ALL_SONGS = Object.values(GENRE_SONGS).flat();
+
+const localMatches = (text) => {
+  const q = (text || '').toLowerCase();
+  return ALL_SONGS.filter(s =>
+    s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
+  );
+};
 
 // ── Song recognition ─────────────────────────────────────────────────────────
 // Handled by SonaraBackend (POST /api/recognize), which holds the ACRCloud
@@ -407,39 +415,42 @@ export default function SearchScreen({ navigation }) {
   const handleSearch = (text) => {
     setQuery(text);
     if (!text.trim()) { setSearchResults([]); setAudiusLoading(false); return; }
-    // Instant local matches so results feel immediate; real Audius songs stream in
-    // via the debounced effect below and get appended.
-    const q = text.toLowerCase();
-    setSearchResults(
-      ALL_SONGS.filter(s =>
-        s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q)
-      )
-    );
+    // Instant local matches so results feel immediate; real YouTube + Audius songs
+    // stream in via the debounced effect below.
+    setSearchResults(localMatches(text));
   };
 
-  // Pull real, streamable songs from Audius (no API key) and append them to the
-  // local matches. Debounced, and guarded so a slow response for an old query
-  // can't overwrite results for the current one.
+  // Fetch the real catalogs — YouTube (the famous songs) first, then Audius — and
+  // merge them with the instant local matches. Debounced, and guarded so a slow
+  // response for an old query can't overwrite results for the current one.
   useEffect(() => {
     const term = query.trim();
     if (!term) { setAudiusLoading(false); return; }
     const reqId = ++audiusReqRef.current;
     setAudiusLoading(true);
     const timer = setTimeout(async () => {
-      const remote = await searchAudius(term, 20);
+      const [yt, audius] = await Promise.all([
+        searchYouTube(term, 15),
+        searchAudius(term, 15),
+      ]);
       if (reqId !== audiusReqRef.current) return; // a newer query superseded this one
-      setSearchResults(prev => {
-        const seen = new Set(prev.map(s => s.id));
-        return [...prev, ...remote.filter(r => !seen.has(r.id))];
-      });
+      const seen = new Set();
+      const merged = [];
+      // YouTube first (the actual famous songs), then local, then Audius.
+      for (const s of [...yt, ...localMatches(term), ...audius]) {
+        if (!seen.has(s.id)) { seen.add(s.id); merged.push(s); }
+      }
+      setSearchResults(merged);
       setAudiusLoading(false);
     }, 400);
     return () => clearTimeout(timer);
   }, [query]);
 
   const openSong = (song, queue, index = 0) => {
-    loadAndPlay(song, queue || [song], index);
     addToSearchHistory(song);
+    // One path for every song: context routes catalog + YouTube songs to the root
+    // YouTube engine (real originals) and real-audio songs to expo-av.
+    loadAndPlay(song, queue || [song], index);
     navigation.navigate('Player', { song });
   };
 

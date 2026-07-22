@@ -10,7 +10,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { Video, ResizeMode } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useUser } from '../../context/UserContext';
-import { useArtwork } from '../../services/artwork';
+import { useArtwork, useDominantColor } from '../../services/artwork';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const INLINE_VIDEO_H = Math.round(SCREEN_WIDTH * 9 / 16); // 16:9, full-width like YouTube
@@ -132,6 +132,7 @@ export default function PlayerScreen({ navigation, route }) {
     currentQueue,
     loadAndPlay, playPause, playNextInQueue, playPreviousInQueue, seekTo,
     setIsPlayerOpen,
+    ytVideoId, ytVideoMode, setYtVideoMode, videoControlsRef,
     sleepTimerLabel, setSleepTimer, cancelSleepTimer,
     downloadSong, isDownloaded, colors: c,
   } = useUser();
@@ -186,6 +187,9 @@ export default function PlayerScreen({ navigation, route }) {
   const pausedForVideoRef = useRef(false);
   const controlsTimerRef = useRef(null);
 
+  // Is the current song playing through the root YouTube engine? (Real originals.)
+  const isYouTubePlayback = !!ytVideoId;
+
   // Seek state — prevents external position updates from fighting the slider thumb
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPosition, setSeekPosition] = useState(0);
@@ -200,10 +204,15 @@ export default function PlayerScreen({ navigation, route }) {
   };
 
   const isLiked = isSongLiked(displaySong.id);
-  const bgColor = GENRE_COLORS[displaySong.genre] || '#888';
+  // Background adapts to the playing song's cover art (any genre); falls back to
+  // the genre colour until the art's dominant colour is extracted.
+  const genreColor = GENRE_COLORS[displaySong.genre] || '#888';
+  const bgColor = useDominantColor(displayArt, genreColor);
   const shareLink = `https://sonara.app/song/${displaySong.id}?title=${encodeURIComponent(displaySong.title)}&artist=${encodeURIComponent(displaySong.artist)}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(shareLink)}&format=png&margin=10`;
 
+  // Position/duration/playing come from context, which unifies the expo-av and
+  // YouTube engines — so this screen's controls work the same for either.
   const position = miniPlayerPosition;
   const duration = miniPlayerDuration;
   // While the user drags the slider, show the seek position instead of the
@@ -221,6 +230,33 @@ export default function PlayerScreen({ navigation, route }) {
   const captionText = displaySong.lyrics
     ? (displaySong.lyrics.split('\n').find(l => l.trim() && !l.includes(':')) || displaySong.title)
     : `♪ ${displaySong.title} ♪`;
+
+  // YouTube songs are video (they can't play audio-only), so keep them in Video mode.
+  useEffect(() => {
+    if (isYouTubePlayback) setIsVideoMode(true);
+  }, [currentTrack?.id, isYouTubePlayback]);
+
+  // Reveal the root YouTube video while this screen shows a YouTube-backed song;
+  // always collapse it on the way out.
+  useEffect(() => {
+    setYtVideoMode(isVideoMode && isYouTubePlayback);
+  }, [isVideoMode, isYouTubePlayback]);
+  useEffect(() => () => setYtVideoMode(false), []);
+
+  // Wire the on-video Back / Timer / Queue / Lyrics buttons (rendered by the root
+  // player overlay) to this screen's own controls and modals.
+  useEffect(() => {
+    videoControlsRef.current = {
+      onBack: () => navigation.goBack(),
+      onTimer: () => setShowSleepTimer(true),
+      onQueue: () => setShowQueue(true),
+      onLyrics: () => {
+        if (lyricLines.length) setShowLyricsFull(true);
+        else Alert.alert('Lyrics', 'No lyrics available for this song yet.');
+      },
+    };
+    return () => { videoControlsRef.current = {}; };
+  }, [displaySong.id, lyricLines.length]);
 
   // ── Fullscreen video (YouTube-style, landscape) ──
   const enterFullScreen = async () => {
@@ -379,7 +415,8 @@ export default function PlayerScreen({ navigation, route }) {
   };
 
   const handlePlayPause = async () => {
-    if (!isConnected) { Alert.alert('No Internet', 'You need an internet connection!'); return; }
+    // YouTube playback doesn't need a network check (the embed handles buffering).
+    if (!isYouTubePlayback && !isConnected) { Alert.alert('No Internet', 'You need an internet connection!'); return; }
     await playPause();
   };
 
@@ -727,7 +764,15 @@ export default function PlayerScreen({ navigation, route }) {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
           {isVideoMode ? (
-            /* YouTube-style inline video: full-width across the very top */
+            isYouTubePlayback ? (
+              /* The real music video is drawn by the ROOT YouTube player as an
+                 overlay across the top of the screen (so it keeps playing across
+                 navigation). Reserve its space here; play/seek/fullscreen live in
+                 that overlay and in the Sonara controls below (via context). */
+              <View style={styles.ytVideoSpacer} />
+            ) : (
+            /* No YouTube original → expo-av demo video, driven by the audio engine
+               and muted so the song's audio stays the sound. */
             <View style={styles.inlineVideoWrap}>
               {/* Tap surface sits under the controls: double-tap right/left to seek,
                   a lone tap toggles. The clip is muted — the sound is the audio engine
@@ -800,6 +845,7 @@ export default function PlayerScreen({ navigation, route }) {
                 <Ionicons name="expand" size={20} color={c.icon} />
               </TouchableOpacity>
             </View>
+            )
           ) : (
             <>
               {/* HEADER */}
@@ -917,15 +963,19 @@ export default function PlayerScreen({ navigation, route }) {
                 {sleepTimerLabel ? 'Active' : 'Timer'}
               </Text>
             </TouchableOpacity>
-            {/* REVIEW MODE: Audio/Video switch temporarily open — restore the isPremium gate + premiumDot after review */}
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => setIsVideoMode(!isVideoMode)}>
-              <View>
-                <Ionicons name={isVideoMode ? 'musical-notes' : 'videocam-outline'} size={22} color={isVideoMode ? bgColor : 'rgba(255,255,255,0.5)'} />
-              </View>
-              <Text style={[styles.actionLabel, isVideoMode && { color: bgColor }]}>{isVideoMode ? 'Audio' : 'Video'}</Text>
-            </TouchableOpacity>
+            {/* REVIEW MODE: Audio/Video switch temporarily open — restore the isPremium gate + premiumDot after review.
+                Hidden for YouTube-backed songs: they can only play as video (YouTube
+                blocks audio-only playback), so there's nothing to switch to. */}
+            {!isYouTubePlayback && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => setIsVideoMode(!isVideoMode)}>
+                <View>
+                  <Ionicons name={isVideoMode ? 'musical-notes' : 'videocam-outline'} size={22} color={isVideoMode ? bgColor : 'rgba(255,255,255,0.5)'} />
+                </View>
+                <Text style={[styles.actionLabel, isVideoMode && { color: bgColor }]}>{isVideoMode ? 'Audio' : 'Video'}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.actionBtn} onPress={toggleLyrics}>
               <Ionicons name="text-outline" size={22} color={showLyrics ? bgColor : 'rgba(255,255,255,0.5)'} />
               <Text style={[styles.actionLabel, showLyrics && { color: bgColor }]}>Lyrics</Text>
@@ -1516,6 +1566,9 @@ const makeStyles = (c) => StyleSheet.create({
   // Inline (half-screen) YouTube-style video at the top
   inlineVideoWrap: { width: SCREEN_WIDTH, backgroundColor: c.bg, paddingTop: 44, marginBottom: 22, position: 'relative' },
   inlineVideo: { width: SCREEN_WIDTH, height: INLINE_VIDEO_H, backgroundColor: c.bg },
+
+  // Reserves the space the root YouTube video overlay occupies (paddingTop 44 + 16:9).
+  ytVideoSpacer: { width: SCREEN_WIDTH, height: 44 + INLINE_VIDEO_H, marginBottom: 22, backgroundColor: c.bg },
   inlineBack: { position: 'absolute', top: 52, left: 10, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
   inlineTopRight: { position: 'absolute', top: 54, right: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   inlineIconBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10 },

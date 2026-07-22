@@ -1,12 +1,30 @@
 import { createContext, useContext, useState, useRef, useEffect } from 'react';
-import { Alert } from 'react-native';
+import { Alert, View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { Audio } from 'expo-av';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 import api from '../services/api';
 import { resolvePlayableUrl } from '../services/audius';
+import { hasYouTubeKey, findYouTubeId, isYouTubeSong } from '../services/youtube';
 import { themeFor } from '../services/theme';
+
+// The embedded YouTube player lives at the app root (rendered by UserProvider) so a
+// song keeps playing as the user moves between screens — that's what lets the mini
+// player work for YouTube-backed songs. It's a hidden 1px surface while in audio
+// mode and expands to a 16:9 video overlay when a screen asks for Video mode.
+const YT_WIDTH = Dimensions.get('window').width;
+const YT_VIDEO_H = Math.round(YT_WIDTH * 9 / 16);
+
+// A song is "real audio" (user upload, AI-generated, downloaded) when it carries a
+// genuine audioUrl — those play through the expo-av engine (and keep working in the
+// background). Placeholder-catalog songs (soundhelix URLs) and YouTube songs do not,
+// so they route to the YouTube engine to get the real original.
+const hasRealAudio = (song) =>
+  !!song?.audioUrl && !/soundhelix\.com/i.test(song.audioUrl) && !isYouTubeSong(song);
 
 // The default playlist set for a signed-out / brand-new user.
 const EMPTY_PLAYLISTS = [
@@ -49,6 +67,20 @@ export function UserProvider({ children }) {
   const [miniPlayerDuration, setMiniPlayerDuration] = useState(0);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [currentQueue, setCurrentQueue] = useState([]);
+
+  // ── YouTube engine (real originals; root-level player so it survives navigation) ──
+  const [ytVideoId, setYtVideoId] = useState(null);   // truthy ⇒ YouTube is the active engine
+  const [ytPlay, setYtPlay] = useState(false);        // desired play/pause for the embedded player
+  const [ytReady, setYtReady] = useState(false);
+  const [ytVideoMode, setYtVideoMode] = useState(false); // a screen wants the video shown, not just audio
+  const youtubeRef = useRef(null);
+  const ytPlayRef = useRef(false);
+  const engineRef = useRef('expo');                   // 'expo' | 'youtube'
+  // Slider state for the on-video scrubber, and a handler bridge so the video
+  // overlay's Timer/Queue/Lyrics/Back buttons drive PlayerScreen's own modals.
+  const [ytSeeking, setYtSeeking] = useState(false);
+  const [ytSeekVal, setYtSeekVal] = useState(0);
+  const videoControlsRef = useRef({});
 
   // ── Sleep timer (lives in context so it survives screen navigation) ──
   const [sleepTimerLabel, setSleepTimerLabel] = useState(null);
@@ -216,7 +248,77 @@ export function UserProvider({ children }) {
     } catch (_) {}
   };
 
+  // Stop the expo-av engine (used when YouTube is taking over playback).
+  const teardownExpo = () => {
+    const prev = soundRef.current;
+    soundRef.current = null;
+    loadedSongIdRef.current = null;
+    if (prev) {
+      try { prev.setOnPlaybackStatusUpdate(null); } catch (_) {}
+      prev.stopAsync().catch(() => {}).then(() => prev.unloadAsync().catch(() => {}));
+    }
+    disposePreload();
+  };
+
+  // Play a song through the root YouTube player. Returns true if it took over
+  // playback (or was superseded), false if there was no match so the caller can
+  // fall back to expo-av. This is what makes catalog songs play the real original.
+  const playViaYouTube = async (song, queue, queueIndex) => {
+    // Re-tapping the YouTube song already playing → restart it in place.
+    if (engineRef.current === 'youtube' && loadedSongIdRef.current === song.id && youtubeRef.current) {
+      if (queue && queue.length > 0) { queueRef.current = queue; queueIndexRef.current = queueIndex; setCurrentQueue(queue); }
+      try { await youtubeRef.current.seekTo(0, true); } catch (_) {}
+      setYtPlay(true); ytPlayRef.current = true;
+      setIsPlayingGlobal(true); isPlayingRef.current = true;
+      return true;
+    }
+    // A load for this exact song is already in flight (row → Player double-trigger).
+    if (loadingSongIdRef.current === song.id) return true;
+
+    const token = ++loadTokenRef.current;
+    loadingSongIdRef.current = song.id;
+    teardownExpo();
+
+    // Update the UI immediately so the tap feels instant.
+    if (queue && queue.length > 0) { queueRef.current = queue; queueIndexRef.current = queueIndex; setCurrentQueue(queue); }
+    setCurrentTrack(song);
+    setMiniPlayerPosition(0);
+    setMiniPlayerDuration(0);
+    setYtReady(false);
+    engineRef.current = 'youtube';
+
+    const id = song.youtubeId || await findYouTubeId(song);
+    if (token !== loadTokenRef.current) return true;        // superseded — the newer load owns the UI
+    if (!id) {                                              // no original found → let expo-av try
+      engineRef.current = 'expo';
+      if (loadingSongIdRef.current === song.id) loadingSongIdRef.current = null;
+      return false;
+    }
+    setYtVideoId(id);
+    loadedSongIdRef.current = song.id;
+    if (loadingSongIdRef.current === song.id) loadingSongIdRef.current = null;
+    setYtPlay(true); ytPlayRef.current = true;
+    setIsPlayingGlobal(true); isPlayingRef.current = true;
+    lastToggleAtRef.current = Date.now();
+    trackSongPlay(song);
+    return true;
+  };
+
+  // Router: real user audio (uploads / AI / downloads) and everything when there's no
+  // YouTube key goes to expo-av; catalog + YouTube songs go to the YouTube engine.
   const loadAndPlay = async (song, queue = null, queueIndex = 0) => {
+    if (hasYouTubeKey() && !hasRealAudio(song)) {
+      const handled = await playViaYouTube(song, queue, queueIndex);
+      if (handled) return;
+    }
+    await loadViaExpo(song, queue, queueIndex);
+  };
+
+  const loadViaExpo = async (song, queue = null, queueIndex = 0) => {
+    // Taking playback back to expo-av — stop the YouTube player.
+    engineRef.current = 'expo';
+    if (ytVideoId) { setYtVideoId(null); setYtPlay(false); ytPlayRef.current = false; setYtReady(false); setYtVideoMode(false); }
+
     // Re-tapping the track that is already loaded (a Library row, the queue sheet,
     // the same song twice) restarts it in place. Tearing the sound down and
     // re-streaming would spend a network round trip to play audio we already hold.
@@ -370,6 +472,16 @@ export function UserProvider({ children }) {
   };
 
   const playPause = async () => {
+    // YouTube engine — flip the embedded player's play state.
+    if (engineRef.current === 'youtube' && ytVideoId) {
+      const willPlay = !ytPlayRef.current;
+      ytPlayRef.current = willPlay;
+      setYtPlay(willPlay);
+      isPlayingRef.current = willPlay;
+      setIsPlayingGlobal(willPlay);
+      lastToggleAtRef.current = Date.now();
+      return;
+    }
     const sound = soundRef.current;
     if (!sound) {
       // No sound loaded but we have a track — restart it
@@ -403,9 +515,13 @@ export function UserProvider({ children }) {
   };
 
   const playPreviousInQueue = async (isShuffle = false) => {
-    if (miniPlayerPosition > 3000 && soundRef.current) {
-      await soundRef.current.setPositionAsync(0);
-      return;
+    // Past 3s into the song, "previous" restarts it (whichever engine is active).
+    if (miniPlayerPosition > 3000) {
+      if (engineRef.current === 'youtube' && youtubeRef.current) {
+        try { await youtubeRef.current.seekTo(0, true); } catch (_) {}
+        return;
+      }
+      if (soundRef.current) { await soundRef.current.setPositionAsync(0); return; }
     }
     const q = queueRef.current;
     if (q.length === 0) return;
@@ -417,7 +533,63 @@ export function UserProvider({ children }) {
   };
 
   const seekTo = async (value) => {
+    if (engineRef.current === 'youtube' && youtubeRef.current) {
+      try { await youtubeRef.current.seekTo(value / 1000, true); } catch (_) {}
+      setMiniPlayerPosition(value);
+      return;
+    }
     if (soundRef.current) await soundRef.current.setPositionAsync(value);
+  };
+
+  // ── YouTube player callbacks + progress mirror ──
+  // Poll the embedded player so the Sonara progress bar / mini player reflect it.
+  // Starts as soon as there's a video id (getCurrentTime just throws until the
+  // player is ready, which we swallow) so the bar never sits frozen.
+  useEffect(() => {
+    if (!ytVideoId) return;
+    const iv = setInterval(async () => {
+      if (engineRef.current !== 'youtube' || !youtubeRef.current) return;
+      try {
+        const cur = await youtubeRef.current.getCurrentTime();
+        if (typeof cur === 'number' && !Number.isNaN(cur)) setMiniPlayerPosition(cur * 1000);
+        const dur = await youtubeRef.current.getDuration();
+        if (typeof dur === 'number' && dur > 0) setMiniPlayerDuration(dur * 1000);
+      } catch (_) {}
+    }, 500);
+    return () => clearInterval(iv);
+  }, [ytVideoId]);
+
+  const onYtStateChange = (state) => {
+    if (state === 'ended') {
+      const q = queueRef.current;
+      if (q.length > 1) {
+        queueIndexRef.current = (queueIndexRef.current + 1) % q.length;
+        loadAndPlay(q[queueIndexRef.current]);
+      } else {
+        setIsPlayingGlobal(false); isPlayingRef.current = false;
+        setYtPlay(false); ytPlayRef.current = false;
+      }
+    } else if (state === 'playing') {
+      if (Date.now() - lastToggleAtRef.current > 400) {
+        setIsPlayingGlobal(true); isPlayingRef.current = true;
+      }
+      ytPlayRef.current = true;
+    } else if (state === 'paused') {
+      if (Date.now() - lastToggleAtRef.current > 400) {
+        setIsPlayingGlobal(false); isPlayingRef.current = false;
+      }
+    }
+  };
+
+  // On-video scrubber helpers.
+  const ytFmt = (ms) => {
+    if (!ms || ms < 0) return '0:00';
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+  const ytSeekBy = (deltaMs) => {
+    const target = Math.max(0, Math.min(miniPlayerDuration || 0, (miniPlayerPosition || 0) + deltaMs));
+    seekTo(target);
   };
 
   // ── SLEEP TIMER ────────────────────────────────────────────
@@ -429,9 +601,11 @@ export function UserProvider({ children }) {
     if (minutes === 'end') return; // "End of song" — auto-stops via didJustFinish
     sleepTimerTimeoutRef.current = setTimeout(async () => {
       try {
-        if (soundRef.current) await soundRef.current.pauseAsync();
+        if (engineRef.current === 'youtube') { setYtPlay(false); ytPlayRef.current = false; }
+        else if (soundRef.current) await soundRef.current.pauseAsync();
       } catch {}
       setIsPlayingGlobal(false);
+      isPlayingRef.current = false;
       setSleepTimerLabel(null);
       Alert.alert('Sleep Timer 🌙', 'Music stopped. Sleep well!');
     }, minutes * 60 * 1000);
@@ -658,13 +832,114 @@ export function UserProvider({ children }) {
       isPlayerOpen, setIsPlayerOpen,
       currentQueue,
       loadAndPlay, playPause, playNextInQueue, playPreviousInQueue, seekTo,
+      // YouTube engine (real originals; a screen sets ytVideoMode to reveal the video)
+      ytVideoId, ytVideoMode, setYtVideoMode, videoControlsRef,
       // Sleep timer (persists across screens)
       sleepTimerLabel, setSleepTimer, cancelSleepTimer,
     }}>
       {children}
+
+      {/* Root-level YouTube player: hidden 1px while a YouTube song plays as audio
+          (so it keeps going across screens and drives the mini player), and expanded
+          to a 16:9 video overlay when a screen turns on ytVideoMode. */}
+      {ytVideoId ? (
+        <View
+          pointerEvents={ytVideoMode ? 'box-none' : 'none'}
+          style={ytVideoMode ? ytStyles.videoWrap : ytStyles.hidden}>
+          {/* The video itself — no touches (Sonara's controls sit on top). */}
+          <View pointerEvents="none">
+            <YoutubePlayer
+              ref={youtubeRef}
+              height={YT_VIDEO_H}
+              width={YT_WIDTH}
+              play={ytPlay}
+              videoId={ytVideoId}
+              onReady={() => setYtReady(true)}
+              onChangeState={onYtStateChange}
+              // controls:false → no YouTube UI at all; Sonara's own controls drive it.
+              initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1 }}
+              // Let us start/stop playback programmatically (no in-video tap needed).
+              webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false }}
+            />
+          </View>
+
+          {/* Sonara's own clean control layer over the video (only in Video mode). */}
+          {ytVideoMode && (
+            <View style={ytStyles.controls} pointerEvents="box-none">
+              {/* Top: back · timer / queue / lyrics */}
+              <View style={ytStyles.topRow} pointerEvents="box-none">
+                <TouchableOpacity style={ytStyles.iconBtn} onPress={() => videoControlsRef.current?.onBack?.()}>
+                  <Ionicons name="chevron-down" size={24} color="#fff" />
+                </TouchableOpacity>
+                <View style={ytStyles.topRight} pointerEvents="box-none">
+                  <TouchableOpacity style={ytStyles.iconBtn} onPress={() => videoControlsRef.current?.onTimer?.()}>
+                    <Ionicons name="timer-outline" size={20} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={ytStyles.iconBtn} onPress={() => videoControlsRef.current?.onQueue?.()}>
+                    <Ionicons name="list" size={20} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={ytStyles.iconBtn} onPress={() => videoControlsRef.current?.onLyrics?.()}>
+                    <Ionicons name="text-outline" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Center: back 10s · play/pause · forward 10s */}
+              <View style={ytStyles.centerRow} pointerEvents="box-none">
+                <TouchableOpacity style={ytStyles.seekBtn} onPress={() => ytSeekBy(-10000)}>
+                  <Ionicons name="play-back" size={30} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity style={ytStyles.playBtn} onPress={playPause}>
+                  <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={34} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity style={ytStyles.seekBtn} onPress={() => ytSeekBy(10000)}>
+                  <Ionicons name="play-forward" size={30} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Bottom: scrubber */}
+              <View style={ytStyles.bottomRow} pointerEvents="box-none">
+                <Text style={ytStyles.time}>{ytFmt(miniPlayerPosition)}</Text>
+                <Slider
+                  style={ytStyles.slider}
+                  minimumValue={0}
+                  maximumValue={miniPlayerDuration || 1}
+                  value={ytSeeking ? ytSeekVal : miniPlayerPosition}
+                  onSlidingStart={() => { setYtSeeking(true); setYtSeekVal(miniPlayerPosition); }}
+                  onValueChange={setYtSeekVal}
+                  onSlidingComplete={(v) => { seekTo(v); setYtSeeking(false); }}
+                  minimumTrackTintColor="#1DB954"
+                  maximumTrackTintColor="rgba(255,255,255,0.4)"
+                  thumbTintColor="#1DB954"
+                />
+                <Text style={ytStyles.time}>{ytFmt(miniPlayerDuration)}</Text>
+              </View>
+            </View>
+          )}
+        </View>
+      ) : null}
     </UserContext.Provider>
   );
 }
+
+const ytStyles = StyleSheet.create({
+  // Not in video mode: park the player off-screen at real size (a 0/1px webview
+  // gets paused). Playback is only meant to be watched in Video mode anyway.
+  hidden: { position: 'absolute', top: -1000, left: 0, width: YT_WIDTH, height: YT_VIDEO_H },
+  videoWrap: { position: 'absolute', top: 0, left: 0, right: 0, paddingTop: 44, backgroundColor: '#000', zIndex: 40, elevation: 40 },
+
+  // Control layer, laid over the video area (below the 44px status-bar padding).
+  controls: { position: 'absolute', top: 44, left: 0, width: YT_WIDTH, height: YT_VIDEO_H, justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.28)' },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingTop: 6 },
+  topRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconBtn: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  centerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 34 },
+  seekBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  playBtn: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  bottomRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingBottom: 4 },
+  slider: { flex: 1, marginHorizontal: 6, height: 34 },
+  time: { color: '#fff', fontSize: 11, fontWeight: '700', width: 38, textAlign: 'center' },
+});
 
 export function useUser() {
   return useContext(UserContext);

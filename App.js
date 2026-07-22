@@ -21,6 +21,7 @@ import QRScannerScreen from './components/screens/QRScannerScreen';
 import AIGenScreen from './components/screens/AIGenScreen';
 import AIPlaylistScreen from './components/screens/AIPlaylistScreen';
 import VisualizerScreen from './components/screens/VisualizerScreen';
+import YouTubePlayerScreen from './components/screens/YouTubePlayerScreen';
 import MiniPlayer from './components/MiniPlayer';
 import { UserProvider, useUser } from './context/UserContext';
 
@@ -116,6 +117,7 @@ function MainInner() {
       <Stack.Screen name="AIGen" component={AIGenScreen} />
       <Stack.Screen name="AIPlaylist" component={AIPlaylistScreen} />
       <Stack.Screen name="Visualizer" component={VisualizerScreen} />
+      <Stack.Screen name="YouTubePlayer" component={YouTubePlayerScreen} />
     </Stack.Navigator>
   );
 }

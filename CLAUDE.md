@@ -78,7 +78,16 @@ Reworked to fix overlapping playback, a jumping progress bar, and laggy controls
 - **`preloadNext(token)`** downloads the upcoming queue track in the background using **`downloadFirst: true`** (there's a whole song's worth of time) and parks it in `nextSoundRef`. `loadAndPlay` reuses it when the ids match, so auto-advance and the next button start instantly. Shuffle can't match a preload and falls back to streaming.
 - **`isPlayingRef` + `lastToggleAtRef`** — `playPause()` decides from the ref (no await), flips the UI optimistically on the same frame, and rolls back on failure. The status listener ignores `isPlaying` for 400ms after a toggle so an in-flight update can't fight the user's tap.
 - **Auto-advance wraps** (`% q.length`) on `didJustFinish`, matching the next button, so a queue never dead-ends.
-- All `audioUrl`s are placeholder MP3s from `soundhelix.com`. No real catalog exists yet.
+- The hardcoded catalogs still carry placeholder `soundhelix.com` `audioUrl`s — those are **not** played directly anymore (see the YouTube engine below); they're matched to the real original on YouTube.
+
+### Two playback engines: expo-av + YouTube
+
+`context/UserContext.js` runs **two engines behind one public API** (`currentTrack`, `isPlayingGlobal`, `miniPlayerPosition/Duration`, `playPause`, `seekTo`, `playNext/PreviousInQueue`). `engineRef` (`'expo' | 'youtube'`) tracks which one owns playback; every control checks it and dispatches accordingly, so screens and the mini player are engine-agnostic.
+
+- **Router** — `loadAndPlay` calls `hasRealAudio(song)`: real user audio (uploads/AI/downloads — a genuine `audioUrl` that isn't a soundhelix placeholder or a YouTube song) plays through **expo-av** (`loadViaExpo`, the original engine, unchanged, keeps background play). Everything else (placeholder catalog + `source:'youtube'` songs) routes to **`playViaYouTube`** when `hasYouTubeKey()` — it resolves the real original via `findYouTubeId` and plays it. No key / no match → falls back to expo-av.
+- **Root player** — the YouTube `<YoutubePlayer>` is rendered by `UserProvider` **at the app root** (sibling of `children`), so it survives navigation — that's what makes the **mini player work for YouTube songs**. It's a hidden 1px surface in audio mode and expands to a top 16:9 overlay (`ytStyles.videoWrap`, `zIndex 40`) when a screen sets **`ytVideoMode`**. Progress is polled from the player ref into `miniPlayerPosition/Duration`; `onYtStateChange` handles play/pause sync and `'ended'` auto-advance.
+- **PlayerScreen** reads `ytVideoId` (truthy ⇒ YouTube-backed = `isYouTubePlayback`) and toggles `ytVideoMode` while it's in Video mode; in Video mode it renders only a `ytVideoSpacer` (the root overlay draws the actual video). Real-audio songs with no match still use the in-screen expo-av `<Video>` fallback + double-tap seek.
+- **Hard limits (YouTube):** no screen-off/background audio (embed rule — expo-av songs still background fine), and no offline download. `youtubeConfig.js` (gitignored) holds the key; free quota ≈ 100 searches/day, cached per song by `findYouTubeId`.
 
 ### Firebase
 
