@@ -8,7 +8,6 @@ import { Audio } from 'expo-av';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
 import { searchAudius } from '../../services/audius';
-import { searchYouTube } from '../../services/youtube';
 import { useArtwork } from '../../services/artwork';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -420,24 +419,20 @@ export default function SearchScreen({ navigation }) {
     setSearchResults(localMatches(text));
   };
 
-  // Fetch the real catalogs — YouTube (the famous songs) first, then Audius — and
-  // merge them with the instant local matches. Debounced, and guarded so a slow
-  // response for an old query can't overwrite results for the current one.
+  // Fetch the real catalog (Audius) and merge it with the instant local matches.
+  // Debounced, and guarded so a slow response for an old query can't overwrite
+  // results for the current one.
   useEffect(() => {
     const term = query.trim();
     if (!term) { setAudiusLoading(false); return; }
     const reqId = ++audiusReqRef.current;
     setAudiusLoading(true);
     const timer = setTimeout(async () => {
-      const [yt, audius] = await Promise.all([
-        searchYouTube(term, 15),
-        searchAudius(term, 15),
-      ]);
+      const audius = await searchAudius(term, 15);
       if (reqId !== audiusReqRef.current) return; // a newer query superseded this one
       const seen = new Set();
       const merged = [];
-      // YouTube first (the actual famous songs), then local, then Audius.
-      for (const s of [...yt, ...localMatches(term), ...audius]) {
+      for (const s of [...localMatches(term), ...audius]) {
         if (!seen.has(s.id)) { seen.add(s.id); merged.push(s); }
       }
       setSearchResults(merged);

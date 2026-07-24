@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity, Alert, Modal,
-  ScrollView, Animated, Dimensions, StatusBar,
+  ScrollView, Animated, Dimensions, StatusBar, ActivityIndicator,
   TextInput, Clipboard, Image, TouchableWithoutFeedback, Switch, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,11 +9,17 @@ import Slider from '@react-native-community/slider';
 import NetInfo from '@react-native-community/netinfo';
 import { Video, ResizeMode } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import YoutubePlayer from 'react-native-youtube-iframe';
 import { useUser } from '../../context/UserContext';
 import { useArtwork, useDominantColor } from '../../services/artwork';
+import { useLyrics, activeSyncedIndex } from '../../services/lyricsApi';
+import { findYouTubeId } from '../../services/youtube';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const INLINE_VIDEO_H = Math.round(SCREEN_WIDTH * 9 / 16); // 16:9, full-width like YouTube
+// Landscape fullscreen dimensions (the long side becomes the width).
+const FS_W = Math.max(SCREEN_WIDTH, SCREEN_HEIGHT);
+const FS_H = Math.min(SCREEN_WIDTH, SCREEN_HEIGHT);
 
 // Demo fallback so the video experience is watchable until real tracks carry a
 // videoUrl. Replace with real music-video URLs from the catalog/backend.
@@ -132,7 +138,6 @@ export default function PlayerScreen({ navigation, route }) {
     currentQueue,
     loadAndPlay, playPause, playNextInQueue, playPreviousInQueue, seekTo,
     setIsPlayerOpen,
-    ytVideoId, ytVideoMode, setYtVideoMode, videoControlsRef,
     sleepTimerLabel, setSleepTimer, cancelSleepTimer,
     downloadSong, isDownloaded, colors: c,
   } = useUser();
@@ -187,8 +192,18 @@ export default function PlayerScreen({ navigation, route }) {
   const pausedForVideoRef = useRef(false);
   const controlsTimerRef = useRef(null);
 
-  // Is the current song playing through the root YouTube engine? (Real originals.)
-  const isYouTubePlayback = !!ytVideoId;
+  // ── Video mode = the real YouTube music video, with Sonara-only controls ──
+  // Independent of the audio engine: entering Video pauses the audio and plays the
+  // video (its own sound); leaving resumes the audio. No YouTube UI is shown.
+  const ytRef = useRef(null);
+  const [ytId, setYtId] = useState(null);
+  const [ytResolving, setYtResolving] = useState(false);
+  const [ytReady, setYtReady] = useState(false);
+  const [ytPlaying, setYtPlaying] = useState(false); // starts false; playback is triggered on ready (reliable autoplay)
+  const [ytPos, setYtPos] = useState(0);   // millis
+  const [ytDur, setYtDur] = useState(0);   // millis
+  const [ytFull, setYtFull] = useState(false); // video fullscreen (landscape)
+  const pausedForYtRef = useRef(false);
 
   // Seek state — prevents external position updates from fighting the slider thumb
   const [isSeeking, setIsSeeking] = useState(false);
@@ -220,8 +235,21 @@ export default function PlayerScreen({ navigation, route }) {
   const displayPosition = isSeeking ? seekPosition : position;
   const progressPercent = duration > 0 ? (displayPosition / duration) * 100 : 0;
 
-  const lyricLines = parseLyrics(displaySong.lyrics);
-  const activeLine = activeLyricLine(lyricLines, displayPosition, duration);
+  // Real lyrics from LRCLIB (plain + time-synced). A song's own embedded lyrics
+  // (AI-generated tracks) take priority; otherwise we use what LRCLIB returns.
+  // Time-synced lyrics drive exact line highlighting; plain lyrics fall back to
+  // even pacing across the track.
+  const fetchedLyrics = useLyrics(displaySong);
+  const ownLyrics = (displaySong.lyrics || '').trim();
+  const useSynced = !ownLyrics && fetchedLyrics.synced.length > 0;
+  const plainLyrics = ownLyrics || fetchedLyrics.plain;
+  const lyricsStatus = ownLyrics ? 'ok' : fetchedLyrics.status; // 'loading' | 'ok' | 'none'
+  const lyricLines = useSynced
+    ? fetchedLyrics.synced.map(l => ({ text: l.text, isSection: false }))
+    : parseLyrics(plainLyrics);
+  const activeLine = useSynced
+    ? activeSyncedIndex(fetchedLyrics.synced, displayPosition)
+    : activeLyricLine(lyricLines, displayPosition, duration);
 
   // Video to play in video mode — real videoUrl if present, else demo fallback.
   const videoSource = displaySong.videoUrl || SAMPLE_VIDEO_URL;
@@ -231,32 +259,6 @@ export default function PlayerScreen({ navigation, route }) {
     ? (displaySong.lyrics.split('\n').find(l => l.trim() && !l.includes(':')) || displaySong.title)
     : `♪ ${displaySong.title} ♪`;
 
-  // YouTube songs are video (they can't play audio-only), so keep them in Video mode.
-  useEffect(() => {
-    if (isYouTubePlayback) setIsVideoMode(true);
-  }, [currentTrack?.id, isYouTubePlayback]);
-
-  // Reveal the root YouTube video while this screen shows a YouTube-backed song;
-  // always collapse it on the way out.
-  useEffect(() => {
-    setYtVideoMode(isVideoMode && isYouTubePlayback);
-  }, [isVideoMode, isYouTubePlayback]);
-  useEffect(() => () => setYtVideoMode(false), []);
-
-  // Wire the on-video Back / Timer / Queue / Lyrics buttons (rendered by the root
-  // player overlay) to this screen's own controls and modals.
-  useEffect(() => {
-    videoControlsRef.current = {
-      onBack: () => navigation.goBack(),
-      onTimer: () => setShowSleepTimer(true),
-      onQueue: () => setShowQueue(true),
-      onLyrics: () => {
-        if (lyricLines.length) setShowLyricsFull(true);
-        else Alert.alert('Lyrics', 'No lyrics available for this song yet.');
-      },
-    };
-    return () => { videoControlsRef.current = {}; };
-  }, [displaySong.id, lyricLines.length]);
 
   // ── Fullscreen video (YouTube-style, landscape) ──
   const enterFullScreen = async () => {
@@ -359,14 +361,119 @@ export default function PlayerScreen({ navigation, route }) {
     Alert.alert('Downloaded ✅', `"${displaySong.title}" saved to Library › Downloads › Music Videos.`);
   };
 
-  // Auto-hide the video controls while playing (like YouTube)
+  // ── Video mode (YouTube) lifecycle ──────────────────────────────
+  // Resolve the real music-video id when Video mode opens (per song).
+  useEffect(() => {
+    let cancelled = false;
+    if (!isVideoMode) { setYtId(null); setYtReady(false); return; }
+    setShowVideoControls(true);
+    setYtResolving(true);
+    findYouTubeId(displaySong)
+      .then(id => { if (!cancelled) setYtId(id); })
+      .finally(() => { if (!cancelled) setYtResolving(false); });
+    return () => { cancelled = true; };
+  }, [isVideoMode, displaySong.id]);
+
+  // Fresh video → reset the mirrored state. Starts paused; onYtReady kicks it off
+  // (a false→true transition after the player is ready reliably starts playback).
+  useEffect(() => {
+    setYtReady(false); setYtPos(0); setYtDur(0); setYtPlaying(false);
+  }, [ytId]);
+
+  // Called when either the inline or the fullscreen player becomes ready: restore
+  // the position (across a fullscreen swap) and start playing.
+  const onYtReady = () => {
+    setYtReady(true);
+    if (ytPos > 1000) { try { ytRef.current?.seekTo?.(ytPos / 1000, true); } catch (_) {} }
+    setYtPlaying(true);
+  };
+
+  const enterYtFull = async () => {
+    setShowVideoControls(true);
+    setYtReady(false); setYtPlaying(false); // the player remounts in landscape
+    setYtFull(true);
+    try { await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE); } catch (_) {}
+  };
+  const exitYtFull = async () => {
+    setYtReady(false); setYtPlaying(false); // remounts back inline (portrait)
+    try { await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP); } catch (_) {}
+    setYtFull(false);
+  };
+
+  // Keep the two engines apart: pause the audio while a video plays, resume after.
+  useEffect(() => {
+    if (isVideoMode) {
+      if (isPlayingGlobal) { pausedForYtRef.current = true; playPause(); }
+    } else if (pausedForYtRef.current) {
+      pausedForYtRef.current = false; playPause();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVideoMode]);
+
+  // Mirror the video's position/duration into Sonara's video scrubber.
+  useEffect(() => {
+    if (!isVideoMode || !ytReady) return;
+    const iv = setInterval(async () => {
+      try {
+        const cur = await ytRef.current?.getCurrentTime?.();
+        const dur = await ytRef.current?.getDuration?.();
+        if (typeof cur === 'number' && !isSeeking) setYtPos(cur * 1000);
+        if (typeof dur === 'number' && dur > 0) setYtDur(dur * 1000);
+      } catch (_) {}
+    }, 500);
+    return () => clearInterval(iv);
+  }, [isVideoMode, ytReady, isSeeking]);
+
+  const onYtStateChange = (state) => {
+    if (state === 'playing') setYtPlaying(true);
+    else if (state === 'paused' || state === 'ended') setYtPlaying(false);
+  };
+
+  const ytTogglePlay = () => { setYtPlaying(p => !p); setShowVideoControls(true); };
+
+  const ytSeekTo = async (ms) => {
+    const target = Math.max(0, Math.min(ytDur || 0, ms));
+    try { await ytRef.current?.seekTo?.(target / 1000, true); } catch (_) {}
+    setYtPos(target);
+  };
+
+  // Double-tap the video: right half jumps forward, left half back; repeats stack.
+  // A lone tap toggles the controls.
+  const handleYtVideoTap = (evt) => {
+    const width = videoAreaWRef.current;
+    if (!width) return;
+    const x = evt?.nativeEvent?.locationX ?? 0;
+    const side = x < width / 2 ? 'back' : 'forward';
+    const now = Date.now();
+    const prev = lastTapRef.current;
+    lastTapRef.current = { time: now, side };
+    const isDoubleTap = now - prev.time < DOUBLE_TAP_MS && prev.side === side;
+    const stacking = seekHintRef.current?.side === side;
+    if (!isDoubleTap && !stacking) {
+      clearTimeout(singleTapTimerRef.current);
+      singleTapTimerRef.current = setTimeout(() => setShowVideoControls(v => !v), DOUBLE_TAP_MS);
+      return;
+    }
+    clearTimeout(singleTapTimerRef.current);
+    const step = side === 'forward' ? FORWARD_STEP_MS : BACK_STEP_MS;
+    const total = (stacking ? seekHintRef.current.total : 0) + step;
+    seekHintRef.current = { side, total };
+    setSeekHint({ side, total });
+    ytSeekTo((ytPos || 0) + (side === 'forward' ? step : -step));
+    clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = setTimeout(() => { seekHintRef.current = null; setSeekHint(null); }, SEEK_HINT_LINGER_MS);
+  };
+
+  // Auto-hide the video controls while playing (like YouTube) — both the inline
+  // YouTube video and the expo-av fullscreen path.
   useEffect(() => {
     if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
-    if (isFullScreen && showVideoControls && videoStatus.isPlaying) {
+    const playing = isFullScreen ? videoStatus.isPlaying : (isVideoMode && ytPlaying);
+    if (showVideoControls && playing) {
       controlsTimerRef.current = setTimeout(() => setShowVideoControls(false), 3500);
     }
     return () => { if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current); };
-  }, [isFullScreen, showVideoControls, videoStatus.isPlaying]);
+  }, [isFullScreen, isVideoMode, showVideoControls, videoStatus.isPlaying, ytPlaying]);
 
   // Always restore portrait when leaving the screen
   useEffect(() => {
@@ -416,7 +523,7 @@ export default function PlayerScreen({ navigation, route }) {
 
   const handlePlayPause = async () => {
     // YouTube playback doesn't need a network check (the embed handles buffering).
-    if (!isYouTubePlayback && !isConnected) { Alert.alert('No Internet', 'You need an internet connection!'); return; }
+    if (!isConnected) { Alert.alert('No Internet', 'You need an internet connection!'); return; }
     await playPause();
   };
 
@@ -565,6 +672,89 @@ export default function PlayerScreen({ navigation, route }) {
       <StatusBar barStyle="light-content" />
       <View style={[styles.bgGlow, { backgroundColor: bgColor }]} />
       <View style={styles.bgDark} />
+
+      {/* ── Video fullscreen (landscape, YouTube, Sonara-only controls) ── */}
+      {isVideoMode && ytFull && (
+        <View style={styles.ytFsContainer}>
+          <StatusBar hidden />
+          <View
+            style={styles.ytFsVideo}
+            onLayout={(e) => { videoAreaWRef.current = e.nativeEvent.layout.width; }}>
+            <View pointerEvents="none">
+              <YoutubePlayer
+                ref={ytRef}
+                height={FS_H}
+                width={FS_W}
+                play={ytPlaying}
+                videoId={ytId}
+                onReady={onYtReady}
+                onChangeState={onYtStateChange}
+                initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1 }}
+                webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false }}
+              />
+            </View>
+            <TouchableWithoutFeedback onPress={handleYtVideoTap}>
+              <View style={StyleSheet.absoluteFill} />
+            </TouchableWithoutFeedback>
+
+            {seekHint && (
+              <View pointerEvents="none" style={[styles.seekHint, seekHint.side === 'back' ? styles.seekHintLeft : styles.seekHintRight]}>
+                <Ionicons name={seekHint.side === 'forward' ? 'play-forward' : 'play-back'} size={30} color="#fff" />
+                <Text style={styles.seekHintText}>{seekHint.side === 'forward' ? '+' : '−'}{Math.round(seekHint.total / 1000)}s</Text>
+              </View>
+            )}
+
+            {showVideoControls && (
+              <>
+                <View pointerEvents="none" style={styles.ytScrim} />
+                <View style={styles.ytFsTop} pointerEvents="box-none">
+                  <TouchableOpacity style={styles.ytIconBtn} onPress={exitYtFull}>
+                    <Ionicons name="contract" size={22} color="#fff" />
+                  </TouchableOpacity>
+                  <Text style={styles.ytFsTitle} numberOfLines={1}>{displaySong.title}</Text>
+                  <View style={styles.ytTopRight} pointerEvents="box-none">
+                    <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowQueue(true)}>
+                      <Ionicons name="list" size={20} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.ytIconBtn} onPress={handleDownloadVideo}>
+                      <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowSleepTimer(true)}>
+                      <Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? '#1DB954' : '#fff'} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.ytCenter} pointerEvents="box-none">
+                  <TouchableOpacity style={styles.ytPlayBtn} onPress={ytTogglePlay}>
+                    <Ionicons name={ytPlaying ? 'pause' : 'play'} size={38} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.ytFsBottom} pointerEvents="box-none">
+                  <Text style={styles.inlineTime}>{formatTime(ytPos)}</Text>
+                  <Slider
+                    style={styles.inlineSlider}
+                    minimumValue={0}
+                    maximumValue={ytDur || 1}
+                    value={ytPos}
+                    onSlidingStart={() => setIsSeeking(true)}
+                    onValueChange={(v) => setYtPos(v)}
+                    onSlidingComplete={async (v) => { await ytSeekTo(v); setIsSeeking(false); }}
+                    minimumTrackTintColor="#FF0000"
+                    maximumTrackTintColor="rgba(255,255,255,0.4)"
+                    thumbTintColor="#FF0000"
+                  />
+                  <Text style={styles.inlineTime}>{formatTime(ytDur)}</Text>
+                  <TouchableOpacity style={styles.ytExpandBtn} onPress={exitYtFull}>
+                    <Ionicons name="contract" size={17} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      )}
 
       {isVideoMode && isFullScreen && (
         <View style={styles.fsContainer}>
@@ -760,92 +950,109 @@ export default function PlayerScreen({ navigation, route }) {
         </View>
       )}
 
-      {(!isVideoMode || !isFullScreen) && (
+      {!ytFull && (!isVideoMode || !isFullScreen) && (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
           {isVideoMode ? (
-            isYouTubePlayback ? (
-              /* The real music video is drawn by the ROOT YouTube player as an
-                 overlay across the top of the screen (so it keeps playing across
-                 navigation). Reserve its space here; play/seek/fullscreen live in
-                 that overlay and in the Sonara controls below (via context). */
-              <View style={styles.ytVideoSpacer} />
-            ) : (
-            /* No YouTube original → expo-av demo video, driven by the audio engine
-               and muted so the song's audio stays the sound. */
+            /* Video mode = the REAL YouTube music video, full-width at the top,
+               with Sonara's own controls only (no YouTube UI). */
             <View style={styles.inlineVideoWrap}>
-              {/* Tap surface sits under the controls: double-tap right/left to seek,
-                  a lone tap toggles. The clip is muted — the sound is the audio engine
-                  playing the song, so play/pause drives the engine and the picture
-                  follows it via shouldPlay. */}
-              <TouchableWithoutFeedback onPress={handleVideoTap}>
-                <View onLayout={(e) => { videoAreaWRef.current = e.nativeEvent.layout.width; }}>
-                  <Video
-                    ref={videoRef}
-                    source={{ uri: videoSource }}
-                    style={styles.inlineVideo}
-                    resizeMode={ResizeMode.CONTAIN}
-                    shouldPlay={isPlayingGlobal}
-                    isLooping
-                    isMuted
-                    onPlaybackStatusUpdate={setVideoStatus}
-                  />
-                </View>
-              </TouchableWithoutFeedback>
+              {ytId ? (
+                <>
+                  {/* The video, with a transparent tap layer over it: double-tap
+                      right/left to seek, a lone tap toggles the controls. */}
+                  <View
+                    style={styles.ytBox}
+                    onLayout={(e) => { videoAreaWRef.current = e.nativeEvent.layout.width; }}>
+                    <View pointerEvents="none">
+                      <YoutubePlayer
+                        ref={ytRef}
+                        height={INLINE_VIDEO_H}
+                        width={SCREEN_WIDTH}
+                        play={ytPlaying}
+                        videoId={ytId}
+                        onReady={onYtReady}
+                        onChangeState={onYtStateChange}
+                        initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1 }}
+                        webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false }}
+                      />
+                    </View>
+                    <TouchableWithoutFeedback onPress={handleYtVideoTap}>
+                      <View style={StyleSheet.absoluteFill} />
+                    </TouchableWithoutFeedback>
 
-              {/* Double-tap seek indicator */}
-              {seekHint && (
-                <View
-                  pointerEvents="none"
-                  style={[styles.seekHint, seekHint.side === 'back' ? styles.seekHintLeft : styles.seekHintRight]}>
-                  <Ionicons
-                    name={seekHint.side === 'forward' ? 'play-forward' : 'play-back'}
-                    size={24}
-                    color={c.icon}
-                  />
-                  <Text style={styles.seekHintText}>
-                    {seekHint.side === 'forward' ? '+' : '−'}{Math.round(seekHint.total / 1000)}s
-                  </Text>
+                  {/* Double-tap seek indicator */}
+                  {seekHint && (
+                    <View pointerEvents="none" style={[styles.seekHint, seekHint.side === 'back' ? styles.seekHintLeft : styles.seekHintRight]}>
+                      <Ionicons name={seekHint.side === 'forward' ? 'play-forward' : 'play-back'} size={24} color="#fff" />
+                      <Text style={styles.seekHintText}>{seekHint.side === 'forward' ? '+' : '−'}{Math.round(seekHint.total / 1000)}s</Text>
+                    </View>
+                  )}
+
+                  {showVideoControls && (
+                    <>
+                      <View pointerEvents="none" style={styles.ytScrim} />
+                      {/* Top: back to audio · queue / download / sleep timer */}
+                      <View style={styles.ytTopBar} pointerEvents="box-none">
+                        <TouchableOpacity style={styles.ytIconBtn} onPress={() => setIsVideoMode(false)}>
+                          <Ionicons name="chevron-down" size={24} color="#fff" />
+                        </TouchableOpacity>
+                        <View style={styles.ytTopRight} pointerEvents="box-none">
+                          <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowQueue(true)}>
+                            <Ionicons name="list" size={20} color="#fff" />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.ytIconBtn} onPress={handleDownloadVideo}>
+                            <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color="#fff" />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowSleepTimer(true)}>
+                            <Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? '#1DB954' : '#fff'} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {/* Center: play / pause */}
+                      <View style={styles.ytCenter} pointerEvents="box-none">
+                        <TouchableOpacity style={styles.ytPlayBtn} onPress={ytTogglePlay}>
+                          <Ionicons name={ytPlaying ? 'pause' : 'play'} size={34} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Bottom: the ONLY progress bar in video mode (video's own) */}
+                      <View style={styles.ytBottomBar} pointerEvents="box-none">
+                        <Text style={styles.inlineTime}>{formatTime(ytPos)}</Text>
+                        <Slider
+                          style={styles.inlineSlider}
+                          minimumValue={0}
+                          maximumValue={ytDur || 1}
+                          value={ytPos}
+                          onSlidingStart={() => setIsSeeking(true)}
+                          onValueChange={(v) => setYtPos(v)}
+                          onSlidingComplete={async (v) => { await ytSeekTo(v); setIsSeeking(false); }}
+                          minimumTrackTintColor="#FF0000"
+                          maximumTrackTintColor="rgba(255,255,255,0.4)"
+                          thumbTintColor="#FF0000"
+                        />
+                        <Text style={styles.inlineTime}>{formatTime(ytDur)}</Text>
+                        <TouchableOpacity style={styles.ytExpandBtn} onPress={enterYtFull}>
+                          <Ionicons name="expand" size={17} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                  </View>
+                </>
+              ) : (
+                /* Resolving the video / no match found */
+                <View style={styles.ytLoading}>
+                  <ActivityIndicator color="#fff" />
+                  <Text style={styles.ytLoadingText}>{ytResolving ? 'Loading video…' : 'No video found for this song.'}</Text>
+                  <TouchableOpacity style={styles.ytBackAudio} onPress={() => setIsVideoMode(false)}>
+                    <Ionicons name="musical-notes" size={15} color="#fff" />
+                    <Text style={styles.ytBackAudioText}>Back to audio</Text>
+                  </TouchableOpacity>
                 </View>
               )}
-
-              {/* box-none so only the button takes touches — the rest reach the
-                  tap surface underneath. */}
-              <View style={styles.inlineTransport} pointerEvents="box-none">
-                <TouchableOpacity
-                  style={styles.inlinePlayBtn}
-                  onPress={handlePlayPause}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name={isPlayingGlobal ? 'pause' : 'play'} size={24} color={c.accentText} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Back — top-left */}
-              <TouchableOpacity style={styles.inlineBack} onPress={() => navigation.goBack()}>
-                <Ionicons name="chevron-down" size={24} color={c.icon} />
-              </TouchableOpacity>
-              {/* Settings (download, timer, subtitles, quality) + queue — top-right */}
-              <View style={styles.inlineTopRight}>
-                <TouchableOpacity style={styles.inlineIconBtn} onPress={() => setShowVideoSettings(true)}>
-                  <Ionicons name="settings-outline" size={14} color={c.icon} />
-                  <Text style={styles.videoBtnText}>{videoQuality}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.inlineIconBtnPlain} onPress={() => setShowQueue(true)}>
-                  <Ionicons name="list" size={18} color={c.icon} />
-                </TouchableOpacity>
-              </View>
-              {/* Subtitles caption */}
-              {subtitlesOn && (
-                <View style={styles.videoCaption}>
-                  <Text style={styles.videoCaptionText} numberOfLines={2}>{captionText}</Text>
-                </View>
-              )}
-              {/* Expand — bottom-right */}
-              <TouchableOpacity style={styles.inlineExpand} onPress={enterFullScreen}>
-                <Ionicons name="expand" size={20} color={c.icon} />
-              </TouchableOpacity>
             </View>
-            )
           ) : (
             <>
               {/* HEADER */}
@@ -875,6 +1082,9 @@ export default function PlayerScreen({ navigation, route }) {
             </>
           )}
 
+          {/* Audio-mode UI only — in Video mode the screen shows just the video. */}
+          {!isVideoMode && (
+          <>
           {/* SONG INFO */}
           <View style={styles.songInfoRow}>
             <View style={styles.songInfoLeft}>
@@ -896,29 +1106,32 @@ export default function PlayerScreen({ navigation, route }) {
             </View>
           </View>
 
-          {/* PROGRESS BAR */}
-          <View style={styles.progressSection}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progressPercent}%`, backgroundColor: '#fff' }]} />
-              <View style={[styles.progressThumb, { left: `${Math.min(progressPercent, 97)}%`, backgroundColor: '#fff', shadowColor: '#fff' }]} />
+          {/* PROGRESS BAR — audio only. In video mode the on-video scrubber is the
+              single progress bar, so this one is hidden. */}
+          {!isVideoMode && (
+            <View style={styles.progressSection}>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${progressPercent}%`, backgroundColor: '#fff' }]} />
+                <View style={[styles.progressThumb, { left: `${Math.min(progressPercent, 97)}%`, backgroundColor: '#fff', shadowColor: '#fff' }]} />
+              </View>
+              <Slider
+                style={styles.sliderOverlay}
+                minimumValue={0}
+                maximumValue={duration || 1}
+                value={displayPosition}
+                onSlidingStart={() => { setIsSeeking(true); setSeekPosition(position); }}
+                onValueChange={(v) => setSeekPosition(v)}
+                onSlidingComplete={async (v) => { await seekTo(v); setIsSeeking(false); }}
+                minimumTrackTintColor="transparent"
+                maximumTrackTintColor="transparent"
+                thumbTintColor="transparent"
+              />
+              <View style={styles.timeRow}>
+                <Text style={styles.timeText}>{formatTime(position)}</Text>
+                <Text style={styles.timeText}>-{formatTime(duration - position)}</Text>
+              </View>
             </View>
-            <Slider
-              style={styles.sliderOverlay}
-              minimumValue={0}
-              maximumValue={duration || 1}
-              value={displayPosition}
-              onSlidingStart={() => { setIsSeeking(true); setSeekPosition(position); }}
-              onValueChange={(v) => setSeekPosition(v)}
-              onSlidingComplete={async (v) => { await seekTo(v); setIsSeeking(false); }}
-              minimumTrackTintColor="transparent"
-              maximumTrackTintColor="transparent"
-              thumbTintColor="transparent"
-            />
-            <View style={styles.timeRow}>
-              <Text style={styles.timeText}>{formatTime(position)}</Text>
-              <Text style={styles.timeText}>-{formatTime(duration - position)}</Text>
-            </View>
-          </View>
+          )}
 
           {/* CONTROLS */}
           <View style={styles.controls}>
@@ -963,19 +1176,15 @@ export default function PlayerScreen({ navigation, route }) {
                 {sleepTimerLabel ? 'Active' : 'Timer'}
               </Text>
             </TouchableOpacity>
-            {/* REVIEW MODE: Audio/Video switch temporarily open — restore the isPremium gate + premiumDot after review.
-                Hidden for YouTube-backed songs: they can only play as video (YouTube
-                blocks audio-only playback), so there's nothing to switch to. */}
-            {!isYouTubePlayback && (
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => setIsVideoMode(!isVideoMode)}>
-                <View>
-                  <Ionicons name={isVideoMode ? 'musical-notes' : 'videocam-outline'} size={22} color={isVideoMode ? bgColor : 'rgba(255,255,255,0.5)'} />
-                </View>
-                <Text style={[styles.actionLabel, isVideoMode && { color: bgColor }]}>{isVideoMode ? 'Audio' : 'Video'}</Text>
-              </TouchableOpacity>
-            )}
+            {/* REVIEW MODE: Audio/Video switch temporarily open — restore the isPremium gate + premiumDot after review */}
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => setIsVideoMode(!isVideoMode)}>
+              <View>
+                <Ionicons name={isVideoMode ? 'musical-notes' : 'videocam-outline'} size={22} color={isVideoMode ? bgColor : 'rgba(255,255,255,0.5)'} />
+              </View>
+              <Text style={[styles.actionLabel, isVideoMode && { color: bgColor }]}>{isVideoMode ? 'Audio' : 'Video'}</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtn} onPress={toggleLyrics}>
               <Ionicons name="text-outline" size={22} color={showLyrics ? bgColor : 'rgba(255,255,255,0.5)'} />
               <Text style={[styles.actionLabel, showLyrics && { color: bgColor }]}>Lyrics</Text>
@@ -1002,7 +1211,9 @@ export default function PlayerScreen({ navigation, route }) {
               <TouchableOpacity
                 activeOpacity={0.75}
                 onPress={() => lyricLines.length > 0 && setShowLyricsFull(true)}>
-                <Text style={styles.lyricsText}>{displaySong.lyrics || 'No lyrics available.'}</Text>
+                <Text style={styles.lyricsText}>
+                  {plainLyrics || (lyricsStatus === 'loading' ? 'Loading lyrics…' : 'No lyrics available for this song.')}
+                </Text>
                 {lyricLines.length > 0 && (
                   <View style={styles.lyricsExpandHint}>
                     <Ionicons name="expand" size={13} color={bgColor} />
@@ -1014,6 +1225,8 @@ export default function PlayerScreen({ navigation, route }) {
           )}
 
           <View style={{ height: 60 }} />
+          </>
+          )}
         </ScrollView>
       )}
 
@@ -1567,13 +1780,35 @@ const makeStyles = (c) => StyleSheet.create({
   inlineVideoWrap: { width: SCREEN_WIDTH, backgroundColor: c.bg, paddingTop: 44, marginBottom: 22, position: 'relative' },
   inlineVideo: { width: SCREEN_WIDTH, height: INLINE_VIDEO_H, backgroundColor: c.bg },
 
-  // Reserves the space the root YouTube video overlay occupies (paddingTop 44 + 16:9).
-  ytVideoSpacer: { width: SCREEN_WIDTH, height: 44 + INLINE_VIDEO_H, marginBottom: 22, backgroundColor: c.bg },
   inlineBack: { position: 'absolute', top: 52, left: 10, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
   inlineTopRight: { position: 'absolute', top: 54, right: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   inlineIconBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10 },
   inlineIconBtnPlain: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
   inlineExpand: { position: 'absolute', bottom: 10, right: 12, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  inlineSlider: { flex: 1, height: 30, marginHorizontal: 4 },
+  inlineTime: { color: '#fff', fontSize: 10, fontWeight: '700', width: 32, textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3 },
+
+  // ── Video mode (YouTube) ──
+  ytBox: { width: SCREEN_WIDTH, height: INLINE_VIDEO_H, backgroundColor: '#000', position: 'relative' },
+  ytScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.28)' },
+  ytTopBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 6 },
+  ytTopRight: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  ytIconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  ytCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  ytPlayBtn: { width: 62, height: 62, borderRadius: 31, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  ytBottomBar: { position: 'absolute', bottom: 4, left: 6, right: 6, flexDirection: 'row', alignItems: 'center' },
+  ytLoading: { width: SCREEN_WIDTH, height: INLINE_VIDEO_H, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  ytLoadingText: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
+  ytBackAudio: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  ytBackAudioText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  ytExpandBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
+
+  // Video fullscreen (landscape)
+  ytFsContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000', zIndex: 1000, alignItems: 'center', justifyContent: 'center' },
+  ytFsVideo: { width: FS_W, height: FS_H, backgroundColor: '#000', position: 'relative', alignItems: 'center', justifyContent: 'center' },
+  ytFsTop: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 10 },
+  ytFsTitle: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '700', marginHorizontal: 10 },
+  ytFsBottom: { position: 'absolute', bottom: 10, left: 16, right: 16, flexDirection: 'row', alignItems: 'center' },
 
   // Inline video transport (back 5s · play/pause · forward 10s)
   inlineTransport: {
