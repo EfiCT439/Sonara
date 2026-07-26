@@ -424,8 +424,10 @@ export default function PlayerScreen({ navigation, route }) {
   }, [isVideoMode, ytReady, isSeeking]);
 
   const onYtStateChange = (state) => {
+    // Keep our play/pause icon in sync with the real player — including the
+    // 'unstarted'/'video cued' states you get when the embed blocks autoplay.
     if (state === 'playing') setYtPlaying(true);
-    else if (state === 'paused' || state === 'ended') setYtPlaying(false);
+    else if (state === 'paused' || state === 'ended' || state === 'unstarted' || state === 'video cued') setYtPlaying(false);
   };
 
   const ytTogglePlay = () => { setYtPlaying(p => !p); setShowVideoControls(true); };
@@ -679,78 +681,63 @@ export default function PlayerScreen({ navigation, route }) {
           <View
             style={styles.ytFsVideo}
             onLayout={(e) => { videoAreaWRef.current = e.nativeEvent.layout.width; }}>
-            <View pointerEvents="none">
-              <YoutubePlayer
-                ref={ytRef}
-                height={FS_H}
-                width={FS_W}
-                play={ytPlaying}
-                videoId={ytId}
-                onReady={onYtReady}
-                onChangeState={onYtStateChange}
-                initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1 }}
-                webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false, androidLayerType: 'hardware' }}
-              />
-            </View>
-            <TouchableWithoutFeedback onPress={handleYtVideoTap}>
-              <View style={StyleSheet.absoluteFill} />
-            </TouchableWithoutFeedback>
+            {/* Interactive video (tap to start); Sonara controls at the edges only. */}
+            <YoutubePlayer
+              ref={ytRef}
+              height={FS_H}
+              width={FS_W}
+              play={ytPlaying}
+              videoId={ytId}
+              onReady={onYtReady}
+              onChangeState={onYtStateChange}
+              initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1, iv_load_policy: 3, fs: 0 }}
+              webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false, androidLayerType: 'hardware' }}
+            />
 
-            {seekHint && (
-              <View pointerEvents="none" style={[styles.seekHint, seekHint.side === 'back' ? styles.seekHintLeft : styles.seekHintRight]}>
-                <Ionicons name={seekHint.side === 'forward' ? 'play-forward' : 'play-back'} size={30} color="#fff" />
-                <Text style={styles.seekHintText}>{seekHint.side === 'forward' ? '+' : '−'}{Math.round(seekHint.total / 1000)}s</Text>
+            {!ytPlaying && (
+              <View style={styles.ytTapHint} pointerEvents="none">
+                <View style={styles.ytTapCircle}><Ionicons name="play" size={30} color="#fff" style={{ marginLeft: 3 }} /></View>
+                <Text style={styles.ytTapText}>Tap to play</Text>
               </View>
             )}
 
-            {showVideoControls && (
-              <>
-                <View pointerEvents="none" style={styles.ytScrim} />
-                <View style={styles.ytFsTop} pointerEvents="box-none">
-                  <TouchableOpacity style={styles.ytIconBtn} onPress={exitYtFull}>
-                    <Ionicons name="contract" size={22} color="#fff" />
-                  </TouchableOpacity>
-                  <Text style={styles.ytFsTitle} numberOfLines={1}>{displaySong.title}</Text>
-                  <View style={styles.ytTopRight} pointerEvents="box-none">
-                    <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowQueue(true)}>
-                      <Ionicons name="list" size={20} color="#fff" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.ytIconBtn} onPress={handleDownloadVideo}>
-                      <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color="#fff" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowSleepTimer(true)}>
-                      <Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? '#1DB954' : '#fff'} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
+            <View style={styles.ytFsTop} pointerEvents="box-none">
+              <TouchableOpacity style={styles.ytIconBtn} onPress={exitYtFull}>
+                <Ionicons name="contract" size={22} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.ytFsTitle} numberOfLines={1}>{displaySong.title}</Text>
+              <View style={styles.ytTopRight} pointerEvents="box-none">
+                <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowQueue(true)}>
+                  <Ionicons name="list" size={20} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowSleepTimer(true)}>
+                  <Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? '#1DB954' : '#fff'} />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-                <View style={styles.ytCenter} pointerEvents="box-none">
-                  <TouchableOpacity style={styles.ytPlayBtn} onPress={ytTogglePlay}>
-                    <Ionicons name={ytPlaying ? 'pause' : 'play'} size={38} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.ytFsBottom} pointerEvents="box-none">
-                  <Text style={styles.inlineTime}>{formatTime(ytPos)}</Text>
-                  <Slider
-                    style={styles.inlineSlider}
-                    minimumValue={0}
-                    maximumValue={ytDur || 1}
-                    value={ytPos}
-                    onSlidingStart={() => setIsSeeking(true)}
-                    onValueChange={(v) => setYtPos(v)}
-                    onSlidingComplete={async (v) => { await ytSeekTo(v); setIsSeeking(false); }}
-                    minimumTrackTintColor="#FF0000"
-                    maximumTrackTintColor="rgba(255,255,255,0.4)"
-                    thumbTintColor="#FF0000"
-                  />
-                  <Text style={styles.inlineTime}>{formatTime(ytDur)}</Text>
-                  <TouchableOpacity style={styles.ytExpandBtn} onPress={exitYtFull}>
-                    <Ionicons name="contract" size={17} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+            <View style={styles.ytFsBottom} pointerEvents="box-none">
+              <TouchableOpacity style={styles.ytBarBtn} onPress={ytTogglePlay}>
+                <Ionicons name={ytPlaying ? 'pause' : 'play'} size={20} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.inlineTime}>{formatTime(ytPos)}</Text>
+              <Slider
+                style={styles.inlineSlider}
+                minimumValue={0}
+                maximumValue={ytDur || 1}
+                value={ytPos}
+                onSlidingStart={() => setIsSeeking(true)}
+                onValueChange={(v) => setYtPos(v)}
+                onSlidingComplete={async (v) => { await ytSeekTo(v); setIsSeeking(false); }}
+                minimumTrackTintColor="#FF0000"
+                maximumTrackTintColor="rgba(255,255,255,0.4)"
+                thumbTintColor="#FF0000"
+              />
+              <Text style={styles.inlineTime}>{formatTime(ytDur)}</Text>
+              <TouchableOpacity style={styles.ytExpandBtn} onPress={exitYtFull}>
+                <Ionicons name="contract" size={17} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
@@ -957,89 +944,72 @@ export default function PlayerScreen({ navigation, route }) {
                with Sonara's own controls only (no YouTube UI). */
             <View style={styles.inlineVideoWrap}>
               {ytId ? (
-                <>
-                  {/* The video, with a transparent tap layer over it: double-tap
-                      right/left to seek, a lone tap toggles the controls. */}
-                  <View
-                    style={styles.ytBox}
-                    onLayout={(e) => { videoAreaWRef.current = e.nativeEvent.layout.width; }}>
-                    <View pointerEvents="none">
-                      <YoutubePlayer
-                        ref={ytRef}
-                        height={INLINE_VIDEO_H}
-                        width={SCREEN_WIDTH}
-                        play={ytPlaying}
-                        videoId={ytId}
-                        onReady={onYtReady}
-                        onChangeState={onYtStateChange}
-                        initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1 }}
-                        webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false, androidLayerType: 'hardware' }}
-                      />
-                    </View>
-                    <TouchableWithoutFeedback onPress={handleYtVideoTap}>
-                      <View style={StyleSheet.absoluteFill} />
-                    </TouchableWithoutFeedback>
+                <View
+                  style={styles.ytBox}
+                  onLayout={(e) => { videoAreaWRef.current = e.nativeEvent.layout.width; }}>
+                  {/* The video is INTERACTIVE: a tap on it starts playback (YouTube
+                      embeds require one real tap; after that our controls drive it).
+                      Sonara's own controls sit at the top/bottom edges only, so the
+                      centre of the video stays tappable. No YouTube UI (controls:0). */}
+                  <YoutubePlayer
+                    ref={ytRef}
+                    height={INLINE_VIDEO_H}
+                    width={SCREEN_WIDTH}
+                    play={ytPlaying}
+                    videoId={ytId}
+                    onReady={onYtReady}
+                    onChangeState={onYtStateChange}
+                    initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1, iv_load_policy: 3, fs: 0 }}
+                    webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false, androidLayerType: 'hardware' }}
+                  />
 
-                  {/* Double-tap seek indicator */}
-                  {seekHint && (
-                    <View pointerEvents="none" style={[styles.seekHint, seekHint.side === 'back' ? styles.seekHintLeft : styles.seekHintRight]}>
-                      <Ionicons name={seekHint.side === 'forward' ? 'play-forward' : 'play-back'} size={24} color="#fff" />
-                      <Text style={styles.seekHintText}>{seekHint.side === 'forward' ? '+' : '−'}{Math.round(seekHint.total / 1000)}s</Text>
+                  {/* Tap-to-play hint (non-blocking, so the tap reaches the video) */}
+                  {!ytPlaying && (
+                    <View style={styles.ytTapHint} pointerEvents="none">
+                      <View style={styles.ytTapCircle}><Ionicons name="play" size={30} color="#fff" style={{ marginLeft: 3 }} /></View>
+                      <Text style={styles.ytTapText}>Tap to play</Text>
                     </View>
                   )}
 
-                  {showVideoControls && (
-                    <>
-                      <View pointerEvents="none" style={styles.ytScrim} />
-                      {/* Top: back to audio · queue / download / sleep timer */}
-                      <View style={styles.ytTopBar} pointerEvents="box-none">
-                        <TouchableOpacity style={styles.ytIconBtn} onPress={() => setIsVideoMode(false)}>
-                          <Ionicons name="chevron-down" size={24} color="#fff" />
-                        </TouchableOpacity>
-                        <View style={styles.ytTopRight} pointerEvents="box-none">
-                          <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowQueue(true)}>
-                            <Ionicons name="list" size={20} color="#fff" />
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.ytIconBtn} onPress={handleDownloadVideo}>
-                            <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color="#fff" />
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowSleepTimer(true)}>
-                            <Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? '#1DB954' : '#fff'} />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-
-                      {/* Center: play / pause */}
-                      <View style={styles.ytCenter} pointerEvents="box-none">
-                        <TouchableOpacity style={styles.ytPlayBtn} onPress={ytTogglePlay}>
-                          <Ionicons name={ytPlaying ? 'pause' : 'play'} size={34} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Bottom: the ONLY progress bar in video mode (video's own) */}
-                      <View style={styles.ytBottomBar} pointerEvents="box-none">
-                        <Text style={styles.inlineTime}>{formatTime(ytPos)}</Text>
-                        <Slider
-                          style={styles.inlineSlider}
-                          minimumValue={0}
-                          maximumValue={ytDur || 1}
-                          value={ytPos}
-                          onSlidingStart={() => setIsSeeking(true)}
-                          onValueChange={(v) => setYtPos(v)}
-                          onSlidingComplete={async (v) => { await ytSeekTo(v); setIsSeeking(false); }}
-                          minimumTrackTintColor="#FF0000"
-                          maximumTrackTintColor="rgba(255,255,255,0.4)"
-                          thumbTintColor="#FF0000"
-                        />
-                        <Text style={styles.inlineTime}>{formatTime(ytDur)}</Text>
-                        <TouchableOpacity style={styles.ytExpandBtn} onPress={enterYtFull}>
-                          <Ionicons name="expand" size={17} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                    </>
-                  )}
+                  {/* Top: back to audio · queue (with download inside) · sleep timer */}
+                  <View style={styles.ytTopBar} pointerEvents="box-none">
+                    <TouchableOpacity style={styles.ytIconBtn} onPress={() => setIsVideoMode(false)}>
+                      <Ionicons name="chevron-down" size={24} color="#fff" />
+                    </TouchableOpacity>
+                    <View style={styles.ytTopRight} pointerEvents="box-none">
+                      <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowQueue(true)}>
+                        <Ionicons name="list" size={20} color="#fff" />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowSleepTimer(true)}>
+                        <Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? '#1DB954' : '#fff'} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </>
+
+                  {/* Bottom: play/pause · scrubber · fullscreen */}
+                  <View style={styles.ytBottomBar} pointerEvents="box-none">
+                    <TouchableOpacity style={styles.ytBarBtn} onPress={ytTogglePlay}>
+                      <Ionicons name={ytPlaying ? 'pause' : 'play'} size={20} color="#fff" />
+                    </TouchableOpacity>
+                    <Text style={styles.inlineTime}>{formatTime(ytPos)}</Text>
+                    <Slider
+                      style={styles.inlineSlider}
+                      minimumValue={0}
+                      maximumValue={ytDur || 1}
+                      value={ytPos}
+                      onSlidingStart={() => setIsSeeking(true)}
+                      onValueChange={(v) => setYtPos(v)}
+                      onSlidingComplete={async (v) => { await ytSeekTo(v); setIsSeeking(false); }}
+                      minimumTrackTintColor="#FF0000"
+                      maximumTrackTintColor="rgba(255,255,255,0.4)"
+                      thumbTintColor="#FF0000"
+                    />
+                    <Text style={styles.inlineTime}>{formatTime(ytDur)}</Text>
+                    <TouchableOpacity style={styles.ytExpandBtn} onPress={enterYtFull}>
+                      <Ionicons name="expand" size={17} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
               ) : (
                 /* Resolving the video / no match found */
                 <View style={styles.ytLoading}>
@@ -1714,6 +1684,19 @@ export default function PlayerScreen({ navigation, route }) {
                 <Ionicons name="close" size={24} color={c.textFaint} />
               </TouchableOpacity>
             </View>
+
+            {/* Download the current song — folded into the Queue sheet */}
+            <TouchableOpacity style={[styles.queueDownloadRow, { borderColor: bgColor + '40' }]} onPress={handleDownloadVideo} activeOpacity={0.8}>
+              <View style={[styles.queueDownloadIcon, { backgroundColor: bgColor + '22' }]}>
+                <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color={bgColor} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.queueDownloadTitle}>{isDownloaded(displaySong.id) ? 'Downloaded' : 'Download this song'}</Text>
+                <Text style={styles.queueDownloadSub}>{isDownloaded(displaySong.id) ? 'Saved to Library › Downloads' : 'Save it to your Downloads — works on Wi-Fi or mobile data'}</Text>
+              </View>
+              {!isDownloaded(displaySong.id) && <Ionicons name="chevron-forward" size={16} color={c.textFaint} />}
+            </TouchableOpacity>
+
             <ScrollView showsVerticalScrollIndicator={false}>
               {(currentQueue.length > 0 ? currentQueue : [displaySong]).map((s, index) => (
                 <TouchableOpacity
@@ -1790,12 +1773,17 @@ const makeStyles = (c) => StyleSheet.create({
   // ── Video mode (YouTube) ──
   ytBox: { width: SCREEN_WIDTH, height: INLINE_VIDEO_H, backgroundColor: '#000', position: 'relative' },
   ytScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.28)' },
-  ytTopBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 6 },
+  ytTopBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 6, paddingBottom: 20, backgroundColor: 'rgba(0,0,0,0.35)' },
   ytTopRight: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   ytIconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   ytCenter: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   ytPlayBtn: { width: 62, height: 62, borderRadius: 31, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
-  ytBottomBar: { position: 'absolute', bottom: 4, left: 6, right: 6, flexDirection: 'row', alignItems: 'center' },
+  ytBarBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginRight: 2 },
+  // Tap-to-play hint over a paused video
+  ytTapHint: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  ytTapCircle: { width: 62, height: 62, borderRadius: 31, backgroundColor: 'rgba(0,0,0,0.5)', borderWidth: 2, borderColor: 'rgba(255,255,255,0.85)', alignItems: 'center', justifyContent: 'center' },
+  ytTapText: { color: '#fff', fontSize: 12, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 4 },
+  ytBottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 6, paddingTop: 20, backgroundColor: 'rgba(0,0,0,0.35)' },
   ytLoading: { width: SCREEN_WIDTH, height: INLINE_VIDEO_H, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', gap: 12 },
   ytLoadingText: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
   ytBackAudio: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
@@ -1805,9 +1793,9 @@ const makeStyles = (c) => StyleSheet.create({
   // Video fullscreen (landscape)
   ytFsContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000', zIndex: 1000, alignItems: 'center', justifyContent: 'center' },
   ytFsVideo: { width: FS_W, height: FS_H, backgroundColor: '#000', position: 'relative', alignItems: 'center', justifyContent: 'center' },
-  ytFsTop: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 10 },
+  ytFsTop: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 22, backgroundColor: 'rgba(0,0,0,0.35)' },
   ytFsTitle: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '700', marginHorizontal: 10 },
-  ytFsBottom: { position: 'absolute', bottom: 10, left: 16, right: 16, flexDirection: 'row', alignItems: 'center' },
+  ytFsBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 10, paddingTop: 22, backgroundColor: 'rgba(0,0,0,0.35)' },
 
   // Inline video transport (back 5s · play/pause · forward 10s)
   inlineTransport: {
@@ -2023,6 +2011,10 @@ const makeStyles = (c) => StyleSheet.create({
   countGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20, justifyContent: 'center' },
   countBtn: { width: 68, height: 68, backgroundColor: c.elevated, borderRadius: 34, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
   countBtnText: { color: c.text, fontSize: 20, fontWeight: '800' },
+  queueDownloadRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, borderWidth: 1, marginBottom: 12 },
+  queueDownloadIcon: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  queueDownloadTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
+  queueDownloadSub: { color: c.textDim, fontSize: 12, marginTop: 2 },
   queueItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, marginBottom: 8, backgroundColor: c.elevated, gap: 12 },
   queueArt: { width: 46, height: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   queueEmoji: { fontSize: 22 },
