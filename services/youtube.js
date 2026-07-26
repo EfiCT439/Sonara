@@ -36,13 +36,16 @@ function normalize(item) {
   };
 }
 
-// Search YouTube's Music category for a query. Returns [] on any failure (no key,
-// quota exceeded, offline) so callers can fall back cleanly.
-export async function searchYouTube(query, limit = 20) {
+// Search YouTube for a query. Returns [] on any failure (no key, quota exceeded,
+// offline) so callers can fall back cleanly. `musicOnly` restricts to the Music
+// category (good for the search-results list); pass false to find a specific
+// song's video (the category filter is inconsistent and often returns nothing).
+export async function searchYouTube(query, limit = 20, musicOnly = true) {
   const term = (query || '').trim();
   if (!term || !hasYouTubeKey()) return [];
   try {
-    const url = `${API}/search?part=snippet&type=video&videoCategoryId=10` +
+    const cat = musicOnly ? '&videoCategoryId=10' : '';
+    const url = `${API}/search?part=snippet&type=video${cat}` +
       `&maxResults=${limit}&q=${encodeURIComponent(term)}&key=${YOUTUBE_API_KEY}`;
     const res = await fetch(url);
     if (!res.ok) return [];
@@ -68,7 +71,10 @@ export async function findYouTubeId(song) {
   if (key in _idCache) return _idCache[key];
   const q = [song.title, song.artist].filter(Boolean).join(' ').trim();
   if (!q) return null;
-  const results = await searchYouTube(`${q} official`, 1);
+  // Plain search (no category filter) → far more reliable at finding the exact
+  // song's official video. Fall back to the bare title+artist if "official" misses.
+  let results = await searchYouTube(`${q} official`, 1, false);
+  if (!results.length) results = await searchYouTube(q, 1, false);
   const id = results[0]?.youtubeId || null;
   _idCache[key] = id;
   return id;

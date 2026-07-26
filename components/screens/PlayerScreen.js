@@ -199,7 +199,7 @@ export default function PlayerScreen({ navigation, route }) {
   const [ytId, setYtId] = useState(null);
   const [ytResolving, setYtResolving] = useState(false);
   const [ytReady, setYtReady] = useState(false);
-  const [ytPlaying, setYtPlaying] = useState(false); // starts false; playback is triggered on ready (reliable autoplay)
+  const [ytPlaying, setYtPlaying] = useState(true); // start playing so the embed autoplays (mediaPlaybackRequiresUserAction:false)
   const [ytPos, setYtPos] = useState(0);   // millis
   const [ytDur, setYtDur] = useState(0);   // millis
   const [ytFull, setYtFull] = useState(false); // video fullscreen (landscape)
@@ -374,14 +374,13 @@ export default function PlayerScreen({ navigation, route }) {
     return () => { cancelled = true; };
   }, [isVideoMode, displaySong.id]);
 
-  // Fresh video → reset the mirrored state. Starts paused; onYtReady kicks it off
-  // (a false→true transition after the player is ready reliably starts playback).
+  // Fresh video → reset position, keep play=true so the new embed autoplays.
   useEffect(() => {
-    setYtReady(false); setYtPos(0); setYtDur(0); setYtPlaying(false);
+    setYtReady(false); setYtPos(0); setYtDur(0); setYtPlaying(true);
   }, [ytId]);
 
   // Called when either the inline or the fullscreen player becomes ready: restore
-  // the position (across a fullscreen swap) and start playing.
+  // the position (across a fullscreen swap) and make sure it's playing.
   const onYtReady = () => {
     setYtReady(true);
     if (ytPos > 1000) { try { ytRef.current?.seekTo?.(ytPos / 1000, true); } catch (_) {} }
@@ -390,12 +389,12 @@ export default function PlayerScreen({ navigation, route }) {
 
   const enterYtFull = async () => {
     setShowVideoControls(true);
-    setYtReady(false); setYtPlaying(false); // the player remounts in landscape
+    setYtReady(false); setYtPlaying(true); // the player remounts in landscape — keep autoplaying
     setYtFull(true);
     try { await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE); } catch (_) {}
   };
   const exitYtFull = async () => {
-    setYtReady(false); setYtPlaying(false); // remounts back inline (portrait)
+    setYtReady(false); setYtPlaying(true); // remounts back inline (portrait) — keep autoplaying
     try { await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP); } catch (_) {}
     setYtFull(false);
   };
@@ -690,7 +689,7 @@ export default function PlayerScreen({ navigation, route }) {
                 onReady={onYtReady}
                 onChangeState={onYtStateChange}
                 initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1 }}
-                webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false }}
+                webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false, androidLayerType: 'hardware' }}
               />
             </View>
             <TouchableWithoutFeedback onPress={handleYtVideoTap}>
@@ -974,7 +973,7 @@ export default function PlayerScreen({ navigation, route }) {
                         onReady={onYtReady}
                         onChangeState={onYtStateChange}
                         initialPlayerParams={{ controls: false, modestbranding: true, rel: false, playsinline: 1 }}
-                        webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false }}
+                        webViewProps={{ allowsInlineMediaPlayback: true, mediaPlaybackRequiresUserAction: false, androidLayerType: 'hardware' }}
                       />
                     </View>
                     <TouchableWithoutFeedback onPress={handleYtVideoTap}>
