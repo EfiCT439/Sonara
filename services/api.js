@@ -138,6 +138,31 @@ const api = {
     }
   },
 
+  // ── Suno (full songs WITH vocals, via the backend's third-party provider) ──
+  async generateSunoSong({ genre, title, description, instrumental = false }) {
+    try {
+      const res = await fetch(`${API_BASE}/ai/suno`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ genre, title, description, instrumental }),
+      });
+      if (!res.ok) return null;
+      return res.json(); // { taskId, status }
+    } catch {
+      return null;
+    }
+  },
+
+  async getSunoStatus(taskId) {
+    try {
+      const res = await fetch(`${API_BASE}/ai/suno/status/${taskId}`);
+      if (!res.ok) return null;
+      return res.json(); // { status, audioUrl?, title?, imageUrl?, songs? }
+    } catch {
+      return null;
+    }
+  },
+
   // ── Song recognition ─────────────────────────────────────────────
   // Uploads the mic recording to our backend, which signs it with the
   // ACRCloud secret and forwards it. The secret never lives in the app.
