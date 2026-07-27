@@ -168,6 +168,7 @@ export default function PlayerScreen({ navigation, route }) {
   const [showShare, setShowShare] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
+  const [showVideoOptions, setShowVideoOptions] = useState(false); // one "⋯" menu: Queue · Download · Sleep Timer
   const [showAboutArtist, setShowAboutArtist] = useState(false);
   const [showRepeatOptions, setShowRepeatOptions] = useState(false);
   const [showQualityOptions, setShowQualityOptions] = useState(false);
@@ -706,14 +707,9 @@ export default function PlayerScreen({ navigation, route }) {
                 <Ionicons name="contract" size={22} color="#fff" />
               </TouchableOpacity>
               <Text style={styles.ytFsTitle} numberOfLines={1}>{displaySong.title}</Text>
-              <View style={styles.ytTopRight} pointerEvents="box-none">
-                <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowQueue(true)}>
-                  <Ionicons name="list" size={20} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowSleepTimer(true)}>
-                  <Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? '#1DB954' : '#fff'} />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowVideoOptions(true)}>
+                <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+              </TouchableOpacity>
             </View>
 
             <View style={styles.ytFsBottom} pointerEvents="box-none">
@@ -971,19 +967,14 @@ export default function PlayerScreen({ navigation, route }) {
                     </View>
                   )}
 
-                  {/* Top: back to audio · queue (with download inside) · sleep timer */}
+                  {/* Top: back to audio · one "⋯" options menu (Queue / Download / Timer) */}
                   <View style={styles.ytTopBar} pointerEvents="box-none">
                     <TouchableOpacity style={styles.ytIconBtn} onPress={() => setIsVideoMode(false)}>
                       <Ionicons name="chevron-down" size={24} color="#fff" />
                     </TouchableOpacity>
-                    <View style={styles.ytTopRight} pointerEvents="box-none">
-                      <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowQueue(true)}>
-                        <Ionicons name="list" size={20} color="#fff" />
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowSleepTimer(true)}>
-                        <Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? '#1DB954' : '#fff'} />
-                      </TouchableOpacity>
-                    </View>
+                    <TouchableOpacity style={styles.ytIconBtn} onPress={() => setShowVideoOptions(true)}>
+                      <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+                    </TouchableOpacity>
                   </View>
 
                   {/* Bottom: play/pause · scrubber · fullscreen */}
@@ -1674,6 +1665,47 @@ export default function PlayerScreen({ navigation, route }) {
       </Modal>
 
       {/* Queue */}
+      {/* Video options — ONE "⋯" menu holding independent Queue · Download · Timer */}
+      <Modal visible={showVideoOptions} transparent animationType="slide" onRequestClose={() => setShowVideoOptions(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Options</Text>
+
+            <TouchableOpacity style={styles.voRow} onPress={() => { setShowVideoOptions(false); setTimeout(() => setShowQueue(true), 260); }} activeOpacity={0.8}>
+              <View style={styles.voIcon}><Ionicons name="list" size={20} color={c.icon} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voTitle}>Queue</Text>
+                <Text style={styles.voSub}>See what's playing next</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.voRow} onPress={() => { setShowVideoOptions(false); setTimeout(handleDownloadVideo, 260); }} activeOpacity={0.8}>
+              <View style={styles.voIcon}><Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color={c.icon} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voTitle}>{isDownloaded(displaySong.id) ? 'Downloaded' : 'Download'}</Text>
+                <Text style={styles.voSub}>{isDownloaded(displaySong.id) ? 'Saved to Library › Downloads' : 'Save this song — Wi-Fi or mobile data'}</Text>
+              </View>
+              {!isDownloaded(displaySong.id) && <Ionicons name="chevron-forward" size={16} color={c.textFaint} />}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.voRow} onPress={() => { setShowVideoOptions(false); setTimeout(() => setShowSleepTimer(true), 260); }} activeOpacity={0.8}>
+              <View style={styles.voIcon}><Ionicons name="timer-outline" size={20} color={sleepTimerLabel ? bgColor : c.icon} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voTitle}>Sleep Timer</Text>
+                <Text style={styles.voSub}>{sleepTimerLabel ? `On · ${sleepTimerLabel}` : 'Off'}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowVideoOptions(false)}>
+              <Text style={styles.sheetCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showQueue} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, { maxHeight: SCREEN_HEIGHT * 0.75 }]}>
@@ -1684,18 +1716,6 @@ export default function PlayerScreen({ navigation, route }) {
                 <Ionicons name="close" size={24} color={c.textFaint} />
               </TouchableOpacity>
             </View>
-
-            {/* Download the current song — folded into the Queue sheet */}
-            <TouchableOpacity style={[styles.queueDownloadRow, { borderColor: bgColor + '40' }]} onPress={handleDownloadVideo} activeOpacity={0.8}>
-              <View style={[styles.queueDownloadIcon, { backgroundColor: bgColor + '22' }]}>
-                <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color={bgColor} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.queueDownloadTitle}>{isDownloaded(displaySong.id) ? 'Downloaded' : 'Download this song'}</Text>
-                <Text style={styles.queueDownloadSub}>{isDownloaded(displaySong.id) ? 'Saved to Library › Downloads' : 'Save it to your Downloads — works on Wi-Fi or mobile data'}</Text>
-              </View>
-              {!isDownloaded(displaySong.id) && <Ionicons name="chevron-forward" size={16} color={c.textFaint} />}
-            </TouchableOpacity>
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {(currentQueue.length > 0 ? currentQueue : [displaySong]).map((s, index) => (
@@ -2011,10 +2031,10 @@ const makeStyles = (c) => StyleSheet.create({
   countGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20, justifyContent: 'center' },
   countBtn: { width: 68, height: 68, backgroundColor: c.elevated, borderRadius: 34, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
   countBtnText: { color: c.text, fontSize: 20, fontWeight: '800' },
-  queueDownloadRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, borderWidth: 1, marginBottom: 12 },
-  queueDownloadIcon: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  queueDownloadTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
-  queueDownloadSub: { color: c.textDim, fontSize: 12, marginTop: 2 },
+  voRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: c.border },
+  voIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' },
+  voTitle: { color: c.text, fontSize: 15, fontWeight: '700' },
+  voSub: { color: c.textDim, fontSize: 12, marginTop: 2 },
   queueItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, marginBottom: 8, backgroundColor: c.elevated, gap: 12 },
   queueArt: { width: 46, height: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   queueEmoji: { fontSize: 22 },
