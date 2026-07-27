@@ -259,7 +259,7 @@ export default function AIGenScreen({ navigation }) {
     const result = await api.generateSunoSong({ genre, title: title.trim(), description: description.trim() });
 
     if (!result?.taskId) {
-      setError('Could not start generation. Make sure the backend is running and SUNO_API_KEY is set in .env.');
+      setError(result?.error || 'Could not start generation. Make sure the backend is running and SUNO_API_KEY is set in .env.');
       setStep('form');
       return;
     }

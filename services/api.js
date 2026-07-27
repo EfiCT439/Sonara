@@ -146,8 +146,9 @@ const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ genre, title, description, instrumental }),
       });
-      if (!res.ok) return null;
-      return res.json(); // { taskId, status }
+      // Return the JSON either way so the caller can show the real reason
+      // (e.g. "insufficient credits") instead of a generic failure.
+      return await res.json().catch(() => null); // { taskId } | { error }
     } catch {
       return null;
     }
