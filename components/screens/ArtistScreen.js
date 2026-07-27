@@ -1,7 +1,29 @@
 import { useRef, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
+import { useArtwork } from '../../services/artwork';
+
+// Module-scope so the useArtwork hook has a stable component (never define a
+// component inside another component's body — it remounts every render).
+function PopularSongRow({ styles, c, song, index, onPress }) {
+  const art = useArtwork(song);
+  return (
+    <TouchableOpacity style={styles.songRow} onPress={() => onPress(song, index)} activeOpacity={0.7}>
+      <Text style={styles.songIndex}>{index + 1}</Text>
+      <View style={styles.songArt}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.songArtImg} />
+          : <Text style={styles.songEmoji}>{song.emoji}</Text>}
+      </View>
+      <View style={styles.songInfo}>
+        <Text style={styles.songTitle} numberOfLines={1}>{song.title}</Text>
+        <Text style={styles.songArtist} numberOfLines={1}>{song.artist}</Text>
+      </View>
+      <Ionicons name="ellipsis-horizontal" size={18} color={c.textFaint} />
+    </TouchableOpacity>
+  );
+}
 
 const ARTIST_SONGS = {
   'Burna Boy': [
@@ -125,24 +147,14 @@ export default function ArtistScreen({ navigation, route }) {
         <Text style={styles.sectionTitle}>Popular Songs</Text>
 
         {songs.map((song, index) => (
-          <TouchableOpacity
+          <PopularSongRow
             key={song.id}
-            style={styles.songRow}
-            onPress={() => {
-              loadAndPlay(song, songs, index);
-              navigation.navigate('Player', { song });
+            styles={styles} c={c} song={song} index={index}
+            onPress={(s, i) => {
+              loadAndPlay(s, songs, i);
+              navigation.navigate('Player', { song: s });
             }}
-            activeOpacity={0.7}>
-            <Text style={styles.songIndex}>{index + 1}</Text>
-            <View style={styles.songArt}>
-              <Text style={styles.songEmoji}>{song.emoji}</Text>
-            </View>
-            <View style={styles.songInfo}>
-              <Text style={styles.songTitle}>{song.title}</Text>
-              <Text style={styles.songArtist}>{song.artist}</Text>
-            </View>
-            <Ionicons name="ellipsis-horizontal" size={18} color={c.textFaint} />
-          </TouchableOpacity>
+          />
         ))}
 
         <View style={{ height: 120 }} />
@@ -264,6 +276,7 @@ const makeStyles = (c) => StyleSheet.create({
     overflow: 'hidden',
   },
   songEmoji: { fontSize: 24 },
+  songArtImg: { width: '100%', height: '100%' },
   songInfo: { flex: 1 },
   songTitle: { color: c.text, fontSize: 15, fontWeight: '700' },
   songArtist: { color: c.textDim, fontSize: 12, marginTop: 3, fontWeight: '600' },

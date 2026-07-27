@@ -87,11 +87,14 @@ function PlaylistItem({ styles, c, playlist, onPress, onLongPress }) {
 }
 
 function ArtistItem({ styles, c, artist, onPress }) {
+  // Use the artist's own imageUrl if present, else fetch a real photo from Deezer.
+  const fetchedPhoto = useArtistImage(artist.name);
+  const photo = artist.imageUrl || fetchedPhoto;
   return (
     <TouchableOpacity style={styles.itemRow} onPress={onPress} activeOpacity={0.75}>
       <View style={styles.artistArt}>
-        {artist.imageUrl
-          ? <Image source={{ uri: artist.imageUrl }} style={styles.artistArtImage} />
+        {photo
+          ? <Image source={{ uri: photo }} style={styles.artistArtImage} />
           : <Text style={styles.itemEmoji}>{artist.emoji || '🎤'}</Text>}
       </View>
       <View style={styles.itemInfo}>

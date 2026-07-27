@@ -217,6 +217,29 @@ function SongRow({ styles, c, item, index, onPress, accentColor }) {
   );
 }
 
+// ── HistoryRow (module scope) — recent searches, now with the song's cover art ──
+function HistoryRow({ styles, c, song, onOpen, onRemove }) {
+  const art = useArtwork(song);
+  return (
+    <TouchableOpacity style={styles.historyItem} onPress={() => onOpen(song)} activeOpacity={0.7}>
+      <View style={styles.historyArt}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.historyArtImg} />
+          : (song.emoji
+            ? <Text style={styles.historyEmoji}>{song.emoji}</Text>
+            : <Ionicons name="time-outline" size={15} color={c.textFaint} />)}
+      </View>
+      <View style={styles.historyInfo}>
+        <Text style={styles.historyTitle} numberOfLines={1}>{song.title}</Text>
+        <Text style={styles.historyArtist} numberOfLines={1}>{song.artist}</Text>
+      </View>
+      <TouchableOpacity onPress={() => onRemove(song)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Ionicons name="close" size={15} color={c.textFaint} />
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+}
+
 // ── Main Screen ──────────────────────────────────────────────────────────────
 export default function SearchScreen({ navigation }) {
   const {
@@ -599,24 +622,12 @@ export default function SearchScreen({ navigation }) {
             </View>
             {searchHistory.length > 0 ? (
               searchHistory.map(song => (
-                <TouchableOpacity
+                <HistoryRow
                   key={song.id}
-                  style={styles.historyItem}
-                  onPress={() => openSong(song)}
-                  activeOpacity={0.7}>
-                  <View style={styles.historyIcon}>
-                    <Ionicons name="time-outline" size={15} color={c.textFaint} />
-                  </View>
-                  <View style={styles.historyInfo}>
-                    <Text style={styles.historyTitle}>{song.title}</Text>
-                    <Text style={styles.historyArtist}>{song.artist}</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => setSearchHistory(prev => prev.filter(s => s.id !== song.id))}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close" size={15} color={c.textFaint} />
-                  </TouchableOpacity>
-                </TouchableOpacity>
+                  styles={styles} c={c} song={song}
+                  onOpen={openSong}
+                  onRemove={(s) => setSearchHistory(prev => prev.filter(x => x.id !== s.id))}
+                />
               ))
             ) : (
               <View style={styles.emptyState}>
@@ -871,10 +882,12 @@ const makeStyles = (c) => StyleSheet.create({
     backgroundColor: c.surface, borderRadius: 10,
     padding: 11, marginBottom: 8, gap: 10,
   },
-  historyIcon: {
-    width: 32, height: 32, backgroundColor: c.elevated,
-    borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+  historyArt: {
+    width: 40, height: 40, backgroundColor: c.elevated,
+    borderRadius: 8, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
+  historyArtImg: { width: '100%', height: '100%' },
+  historyEmoji: { fontSize: 18 },
   historyInfo: { flex: 1 },
   historyTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
   historyArtist: { color: c.textFaint, fontSize: 11, marginTop: 2 },
