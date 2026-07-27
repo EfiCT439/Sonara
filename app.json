@@ -25,7 +25,7 @@
       "package": "com.sonara.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1DB954"
+        "backgroundColor": "#0B120E"
       },
       "permissions": [
         "RECORD_AUDIO"
