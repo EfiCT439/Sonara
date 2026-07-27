@@ -207,28 +207,31 @@ export default function AIGenScreen({ navigation }) {
     return () => animations.forEach(a => a.stop());
   }, [step]);
 
-  // ── Poll Replicate for status ─────────────────────────────────────
+  // ── Poll Suno for status (full songs WITH vocals; ~30s–3min) ──────────
   useEffect(() => {
     if (step !== 'generating' || !predictionId) return;
 
     const poll = async () => {
-      const result = await api.getSongStatus(predictionId);
+      const result = await api.getSunoStatus(predictionId);
       if (!result) return;
 
       if (result.status === 'succeeded') {
         const id = `ai_${Date.now()}`;
         setSongId(id);
         setAudioUrl(result.audioUrl);
-        // Lyrics are generated alongside the track, from its title/description/genre,
-        // and stored on the song as plain text so the Player's lyrics panel shows them.
+        // Suno returns real cover art with the track — use it as the default cover
+        // (the user can still replace it via "Upload Cover Art").
+        if (result.imageUrl) setCoverUri(result.imageUrl);
+        // Template lyrics as a placeholder (Suno writes its own real lyrics, which
+        // this endpoint doesn't return) — shown in the Player's lyrics panel.
         const generated = generateSongLyrics({
           title: title.trim(), description: description.trim(), genre,
         });
         setLyrics(generated);
         // Save into "created content" → shown under Upload Music
         addCreatedSong({
-          id, title: title.trim() || 'Untitled', artist: 'AI Generated',
-          genre, emoji: '✨', audioUrl: result.audioUrl, lyrics: generated.text,
+          id, title: title.trim() || result.title || 'Untitled', artist: 'AI Generated',
+          genre, emoji: '✨', audioUrl: result.audioUrl, imageUrl: result.imageUrl, lyrics: generated.text,
         });
         setStep('result');
       } else if (result.status === 'failed') {
@@ -238,7 +241,7 @@ export default function AIGenScreen({ navigation }) {
       // 'starting' | 'processing' — keep polling
     };
 
-    const iv = setInterval(poll, 3000);
+    const iv = setInterval(poll, 4000);
     poll(); // immediate first check
     return () => clearInterval(iv);
   }, [step, predictionId]);
@@ -253,15 +256,15 @@ export default function AIGenScreen({ navigation }) {
     setError(null);
     setStep('generating');
 
-    const result = await api.generateSong({ genre, title: title.trim(), description: description.trim() });
+    const result = await api.generateSunoSong({ genre, title: title.trim(), description: description.trim() });
 
-    if (!result?.predictionId) {
-      setError('Could not start generation. Make sure the backend is running and REPLICATE_API_TOKEN is set.');
+    if (!result?.taskId) {
+      setError('Could not start generation. Make sure the backend is running and SUNO_API_KEY is set in .env.');
       setStep('form');
       return;
     }
 
-    setPredictionId(result.predictionId);
+    setPredictionId(result.taskId);
   };
 
   const handlePickCover = async () => {
