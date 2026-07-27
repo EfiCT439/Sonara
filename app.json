@@ -13,6 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.sonara.app",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
@@ -21,9 +22,10 @@
       }
     },
     "android": {
+      "package": "com.sonara.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#121212"
+        "backgroundColor": "#1DB954"
       },
       "permissions": [
         "RECORD_AUDIO"
