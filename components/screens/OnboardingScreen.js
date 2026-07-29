@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  StyleSheet, Text, View, TouchableOpacity, ScrollView,
+  StyleSheet, Text, View, TouchableOpacity, ScrollView, Image,
   TextInput, Alert, Animated, ActivityIndicator, FlatList,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
+import { useArtistImage } from '../../services/artwork';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
 
@@ -108,6 +109,95 @@ function searchArtists(query, artists) {
 // Featured artists shown in the browse grid (top picks)
 const FEATURED_IDS = ['1', '2', '3', '4', '5', '17', '26', '30', '38', '44', '22', '51'];
 
+// Module-scope so the useArtistImage hook has a stable component AND the search box
+// never loses focus (an inline component remounts on every keystroke). Each card
+// shows a real artist photo (Deezer), falling back to the emoji avatar.
+function ArtistRow({ artist, selectedArtists, onToggle, styles, c }) {
+  const photo = useArtistImage(artist.name);
+  const isSelected = !!selectedArtists.find(a => a.id === artist.id);
+  const selIdx = selectedArtists.findIndex(a => a.id === artist.id);
+  const color = GENRE_COLORS[artist.genre] || '#888';
+  return (
+    <TouchableOpacity
+      style={[styles.resultRow, isSelected && { backgroundColor: color + '14', borderColor: color + '60' }]}
+      onPress={() => onToggle(artist)}
+      activeOpacity={0.7}>
+      <View style={[styles.resultAvatar, { backgroundColor: isSelected ? color : '#2A2A2A' }]}>
+        {photo
+          ? <Image source={{ uri: photo }} style={styles.resultAvatarImg} />
+          : <Text style={styles.resultEmoji}>{artist.emoji}</Text>}
+      </View>
+      <View style={styles.resultInfo}>
+        <Text style={styles.resultName}>{artist.name}</Text>
+        <Text style={[styles.resultGenre, { color }]}>{artist.genre}</Text>
+      </View>
+      {isSelected ? (
+        <View style={[styles.resultCheck, { backgroundColor: color }]}>
+          <Text style={styles.resultCheckNum}>{selIdx + 1}</Text>
+        </View>
+      ) : (
+        <View style={styles.resultAdd}>
+          <Ionicons name="add" size={18} color={c.textFaint} />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+function ArtistCard({ artist, selectedArtists, onToggle, styles, c }) {
+  const photo = useArtistImage(artist.name);
+  const isSelected = !!selectedArtists.find(a => a.id === artist.id);
+  const selIdx = selectedArtists.findIndex(a => a.id === artist.id);
+  const color = GENRE_COLORS[artist.genre] || '#888';
+  return (
+    <TouchableOpacity
+      style={[styles.card, isSelected && { borderColor: color, backgroundColor: color + '18' }]}
+      onPress={() => onToggle(artist)}
+      activeOpacity={0.75}>
+      <View style={[styles.avatarCircle, isSelected && { backgroundColor: color }]}>
+        {photo
+          ? <Image source={{ uri: photo }} style={styles.avatarImg} />
+          : <Text style={styles.avatarEmoji}>{artist.emoji}</Text>}
+      </View>
+      <Text style={styles.cardName} numberOfLines={1}>{artist.name}</Text>
+      <View style={[styles.genreTag, { backgroundColor: color + '22' }]}>
+        <Text style={[styles.genreText, { color }]}>{artist.genre}</Text>
+      </View>
+      {isSelected && (
+        <View style={[styles.badge, { backgroundColor: color }]}>
+          <Text style={styles.badgeNum}>{selIdx + 1}</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// Top "your picks" slot — also shows the real artist photo.
+function SelectionSlot({ artist, onToggle, styles, c }) {
+  const photo = useArtistImage(artist?.name);
+  const color = artist ? (GENRE_COLORS[artist.genre] || '#888') : '#2A2A2A';
+  return (
+    <TouchableOpacity
+      style={[styles.slot, { borderColor: artist ? color : '#2A2A2A', backgroundColor: artist ? color + '20' : '#161616' }]}
+      onPress={() => artist && onToggle(artist)}
+      activeOpacity={artist ? 0.7 : 1}>
+      {artist ? (
+        <>
+          {photo
+            ? <Image source={{ uri: photo }} style={styles.slotImg} />
+            : <Text style={styles.slotEmoji}>{artist.emoji}</Text>}
+          <Text style={styles.slotName} numberOfLines={1}>{artist.name.split(' ')[0]}</Text>
+          <View style={styles.slotRemove}>
+            <Ionicons name="close" size={9} color={c.icon} />
+          </View>
+        </>
+      ) : (
+        <Ionicons name="add" size={18} color={c.textFaint} />
+      )}
+    </TouchableOpacity>
+  );
+}
+
 export default function OnboardingScreen({ navigation }) {
   const { setFavouriteArtists } = useUser();
   const { colors: c } = useUser();
@@ -203,60 +293,6 @@ export default function OnboardingScreen({ navigation }) {
 
   const progressWidth = progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
 
-  const ArtistRow = ({ artist }) => {
-    const isSelected = !!selectedArtists.find(a => a.id === artist.id);
-    const selIdx = selectedArtists.findIndex(a => a.id === artist.id);
-    const color = GENRE_COLORS[artist.genre] || '#888';
-    return (
-      <TouchableOpacity
-        style={[styles.resultRow, isSelected && { backgroundColor: color + '14', borderColor: color + '60' }]}
-        onPress={() => toggleArtist(artist)}
-        activeOpacity={0.7}>
-        <View style={[styles.resultAvatar, { backgroundColor: isSelected ? color : '#2A2A2A' }]}>
-          <Text style={styles.resultEmoji}>{artist.emoji}</Text>
-        </View>
-        <View style={styles.resultInfo}>
-          <Text style={styles.resultName}>{artist.name}</Text>
-          <Text style={[styles.resultGenre, { color }]}>{artist.genre}</Text>
-        </View>
-        {isSelected ? (
-          <View style={[styles.resultCheck, { backgroundColor: color }]}>
-            <Text style={styles.resultCheckNum}>{selIdx + 1}</Text>
-          </View>
-        ) : (
-          <View style={styles.resultAdd}>
-            <Ionicons name="add" size={18} color={c.textFaint} />
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  const ArtistCard = ({ artist }) => {
-    const isSelected = !!selectedArtists.find(a => a.id === artist.id);
-    const selIdx = selectedArtists.findIndex(a => a.id === artist.id);
-    const color = GENRE_COLORS[artist.genre] || '#888';
-    return (
-      <TouchableOpacity
-        style={[styles.card, isSelected && { borderColor: color, backgroundColor: color + '18' }]}
-        onPress={() => toggleArtist(artist)}
-        activeOpacity={0.75}>
-        <View style={[styles.avatarCircle, isSelected && { backgroundColor: color }]}>
-          <Text style={styles.avatarEmoji}>{artist.emoji}</Text>
-        </View>
-        <Text style={styles.cardName} numberOfLines={1}>{artist.name}</Text>
-        <View style={[styles.genreTag, { backgroundColor: color + '22' }]}>
-          <Text style={[styles.genreText, { color }]}>{artist.genre}</Text>
-        </View>
-        {isSelected && (
-          <View style={[styles.badge, { backgroundColor: color }]}>
-            <Text style={styles.badgeNum}>{selIdx + 1}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -281,29 +317,9 @@ export default function OnboardingScreen({ navigation }) {
 
         {/* Selection slots */}
         <View style={styles.slotsRow}>
-          {[0, 1, 2].map(i => {
-            const artist = selectedArtists[i];
-            const color = artist ? (GENRE_COLORS[artist.genre] || '#888') : '#2A2A2A';
-            return (
-              <TouchableOpacity
-                key={i}
-                style={[styles.slot, { borderColor: artist ? color : '#2A2A2A', backgroundColor: artist ? color + '20' : '#161616' }]}
-                onPress={() => artist && toggleArtist(artist)}
-                activeOpacity={artist ? 0.7 : 1}>
-                {artist ? (
-                  <>
-                    <Text style={styles.slotEmoji}>{artist.emoji}</Text>
-                    <Text style={styles.slotName} numberOfLines={1}>{artist.name.split(' ')[0]}</Text>
-                    <View style={styles.slotRemove}>
-                      <Ionicons name="close" size={9} color={c.icon} />
-                    </View>
-                  </>
-                ) : (
-                  <Ionicons name="add" size={18} color={c.textFaint} />
-                )}
-              </TouchableOpacity>
-            );
-          })}
+          {[0, 1, 2].map(i => (
+            <SelectionSlot key={i} artist={selectedArtists[i]} onToggle={toggleArtist} styles={styles} c={c} />
+          ))}
         </View>
       </Animated.View>
 
@@ -363,7 +379,7 @@ export default function OnboardingScreen({ navigation }) {
           )}
 
           {searchResults.map(artist => (
-            <ArtistRow key={artist.id} artist={artist} />
+            <ArtistRow key={artist.id} artist={artist} selectedArtists={selectedArtists} onToggle={toggleArtist} styles={styles} c={c} />
           ))}
 
           {/* No catalog matches */}
@@ -389,14 +405,14 @@ export default function OnboardingScreen({ navigation }) {
           <Text style={styles.browseLabel}>Popular artists</Text>
           <View style={styles.gridInner}>
             {featuredArtists.map(artist => (
-              <ArtistCard key={artist.id} artist={artist} />
+              <ArtistCard key={artist.id} artist={artist} selectedArtists={selectedArtists} onToggle={toggleArtist} styles={styles} c={c} />
             ))}
           </View>
 
           <Text style={[styles.browseLabel, { marginTop: 24 }]}>All artists</Text>
           <View style={styles.gridInner}>
             {allArtists.filter(a => !FEATURED_IDS.includes(a.id)).map(artist => (
-              <ArtistCard key={artist.id} artist={artist} />
+              <ArtistCard key={artist.id} artist={artist} selectedArtists={selectedArtists} onToggle={toggleArtist} styles={styles} c={c} />
             ))}
           </View>
 
@@ -452,6 +468,7 @@ const makeStyles = (c) => StyleSheet.create({
   slotsRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   slot: { flex: 1, height: 64, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   slotEmoji: { fontSize: 20, marginBottom: 2 },
+  slotImg: { width: 30, height: 30, borderRadius: 15, marginBottom: 3 },
   slotName: { color: c.text, fontSize: 10, fontWeight: '700' },
   slotRemove: { position: 'absolute', top: -5, right: -5, width: 16, height: 16, borderRadius: 8, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#0A0A0A' },
 
@@ -464,7 +481,8 @@ const makeStyles = (c) => StyleSheet.create({
   resultsList: { flex: 1, paddingHorizontal: 20 },
   resultsLabel: { color: c.textFaint, fontSize: 12, fontWeight: '600', marginBottom: 10, marginTop: 4 },
   resultRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.surface, borderRadius: 14, padding: 12, marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent' },
-  resultAvatar: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  resultAvatar: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', marginRight: 12, overflow: 'hidden' },
+  resultAvatarImg: { width: '100%', height: '100%' },
   resultEmoji: { fontSize: 22 },
   resultInfo: { flex: 1 },
   resultName: { color: c.text, fontSize: 15, fontWeight: '700', marginBottom: 3 },
@@ -491,7 +509,8 @@ const makeStyles = (c) => StyleSheet.create({
   gridInner: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 
   card: { width: '30.5%', backgroundColor: c.surface, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 8, alignItems: 'center', borderWidth: 2, borderColor: 'transparent', position: 'relative' },
-  avatarCircle: { width: 52, height: 52, backgroundColor: c.elevated, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  avatarCircle: { width: 52, height: 52, backgroundColor: c.elevated, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 8, overflow: 'hidden' },
+  avatarImg: { width: '100%', height: '100%' },
   avatarEmoji: { fontSize: 24 },
   cardName: { color: c.text, fontSize: 11, fontWeight: '700', textAlign: 'center', marginBottom: 6 },
   genreTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
