@@ -2032,7 +2032,7 @@ const makeStyles = (c) => StyleSheet.create({
   actionBtn: { alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8 },
   actionLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
   premiumDot: { position: 'absolute', top: -3, right: -3 },
-  lyricsPanel: { marginHorizontal: 20, backgroundColor: '#000', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1 },
+  lyricsPanel: { marginHorizontal: 20, backgroundColor: 'rgba(0,0,0,0.38)', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1 },
   lyricsPanelHeaderBtns: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   lyricsPanelScroll: { maxHeight: SCREEN_HEIGHT * 0.34 },
   lyricsPanelScrollContent: { paddingVertical: 4 },
