@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity, Alert, Modal,
   ScrollView, Animated, Dimensions, StatusBar, ActivityIndicator,
@@ -11,7 +11,7 @@ import { Video, ResizeMode } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { useUser } from '../../context/UserContext';
-import { useArtwork, useDominantColor } from '../../services/artwork';
+import { useArtwork, useDominantColor, useTrendingSongs } from '../../services/artwork';
 import { useLyrics, activeSyncedIndex } from '../../services/lyricsApi';
 import { findYouTubeId } from '../../services/youtube';
 
@@ -280,6 +280,15 @@ export default function PlayerScreen({ navigation, route }) {
 
   // Video to play in video mode — real videoUrl if present, else demo fallback.
   const videoSource = displaySong.videoUrl || SAMPLE_VIDEO_URL;
+
+  // Recommended videos shown under the player in Video mode. Prefer the current
+  // queue (context), fall back to real trending songs so there's always a list
+  // with covers. Tapping one loads it and its video plays (video mode stays on).
+  const trendingRecs = useTrendingSongs(20);
+  const videoRecommendations = useMemo(() => {
+    const base = (currentQueue && currentQueue.length > 1) ? currentQueue : trendingRecs;
+    return base.filter((s) => s && s.id !== displaySong.id).slice(0, 15);
+  }, [currentQueue, trendingRecs, displaySong.id]);
 
   // Demo caption shown when subtitles are enabled (real subtitle tracks TBD).
   const captionText = displaySong.lyrics
@@ -706,7 +715,7 @@ export default function PlayerScreen({ navigation, route }) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: bgColor }]}>
+    <View style={[styles.container, { backgroundColor: isVideoMode ? '#000' : bgColor }]}>
       <StatusBar barStyle="light-content" />
       {/* Whole-screen background adapts to the song image's dominant colour; a
           uniform dark scrim over it keeps text/controls readable on any colour. */}
@@ -974,7 +983,9 @@ export default function PlayerScreen({ navigation, route }) {
 
           {isVideoMode ? (
             /* Video mode = the REAL YouTube music video, full-width at the top,
-               with Sonara's own controls only (no YouTube UI). */
+               with Sonara's own controls only (no YouTube UI), then a list of
+               recommended videos underneath. */
+            <>
             <View style={styles.inlineVideoWrap}>
               {ytId ? (
                 <View
@@ -1050,6 +1061,25 @@ export default function PlayerScreen({ navigation, route }) {
                 </View>
               )}
             </View>
+
+            {/* Recommended videos — tap one to play its video (stays in Video mode). */}
+            {videoRecommendations.length > 0 && (
+              <View style={styles.videoRecs}>
+                <Text style={styles.videoRecsTitle}>Recommended Videos</Text>
+                {videoRecommendations.map((s, i) => (
+                  <QueueRow
+                    key={s.id + '_rec_' + i}
+                    song={s}
+                    index={i}
+                    isCurrent={s.id === displaySong.id}
+                    bgColor={bgColor}
+                    styles={styles}
+                    onPress={() => loadAndPlay(s, videoRecommendations, i)}
+                  />
+                ))}
+              </View>
+            )}
+            </>
           ) : (
             <>
               {/* HEADER */}
@@ -1843,6 +1873,8 @@ const makeStyles = (c) => StyleSheet.create({
   bgGlow: { position: 'absolute', top: 0, left: 0, right: 0, height: 260, opacity: 0.2 },
   bgDark: { position: 'absolute', top: 160, left: 0, right: 0, bottom: 0, backgroundColor: c.bg },
   bgScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  videoRecs: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8 },
+  videoRecsTitle: { color: '#fff', fontSize: 17, fontWeight: '800', marginBottom: 14 },
   scrollContent: { paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 55, marginBottom: 20 },
   headerBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
