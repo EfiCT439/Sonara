@@ -2,7 +2,7 @@ import { useRef, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Animated, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
-import { useArtwork } from '../../services/artwork';
+import { useArtwork, useArtistImage, useArtistTopSongs } from '../../services/artwork';
 
 // Module-scope so the useArtwork hook has a stable component (never define a
 // component inside another component's body — it remounts every render).
@@ -62,7 +62,12 @@ export default function ArtistScreen({ navigation, route }) {
   const { colors: c } = useUser();
   const styles = makeStyles(c);
   const isFollowing = isFollowingArtist(artist.id);
-  const songs = ARTIST_SONGS[artist.name] || ARTIST_SONGS['default'];
+
+  // This exact artist's REAL songs (real titles + album covers) from Deezer;
+  // fall back to the placeholder catalog only while loading / if none found.
+  const { songs: realSongs } = useArtistTopSongs(artist.name);
+  const artistPhoto = useArtistImage(artist);
+  const songs = realSongs.length ? realSongs : (ARTIST_SONGS[artist.name] || ARTIST_SONGS['default']);
 
   // Real follower count: artists start with 0 and only gain followers when real
   // Sonara users follow them. `artist.followers` comes from the backend once the
@@ -98,7 +103,9 @@ export default function ArtistScreen({ navigation, route }) {
         {/* Artist hero */}
         <Animated.View style={[styles.hero, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <View style={styles.avatarCircle}>
-            <Text style={styles.avatarEmoji}>{artist.emoji || '🎤'}</Text>
+            {artistPhoto
+              ? <Image source={{ uri: artistPhoto }} style={styles.avatarBigImg} />
+              : <Text style={styles.avatarEmoji}>{artist.emoji || '🎤'}</Text>}
           </View>
 
           <Text style={styles.artistName}>{artist.name}</Text>
@@ -194,6 +201,7 @@ const makeStyles = (c) => StyleSheet.create({
     overflow: 'hidden',
   },
   avatarEmoji: { fontSize: 56 },
+  avatarBigImg: { width: '100%', height: '100%' },
   artistName: { fontSize: 27, fontWeight: '900', color: c.text, marginBottom: 10, textAlign: 'center', letterSpacing: -0.5 },
   genreTag: {
     paddingHorizontal: 12,

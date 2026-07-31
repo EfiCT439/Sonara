@@ -130,6 +130,64 @@ export async function getArtistImage(name) {
   return p;
 }
 
+// ── Artist top songs (Deezer, free, no key) ─────────────────────────────────
+// Real songs for an artist: real titles + album covers + a 30s preview stream of
+// the actual track. Cached per artist. Falls back to [] on any failure.
+const topCache = new Map();
+const topInflight = new Map();
+
+export async function getArtistTopSongs(name, limit = 25) {
+  if (!name) return [];
+  const k = name.toLowerCase();
+  if (topCache.has(k)) return topCache.get(k);
+  if (topInflight.has(k)) return topInflight.get(k);
+
+  const p = (async () => {
+    try {
+      const s = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(name)}&limit=1`);
+      const sj = await s.json();
+      const id = sj?.data?.[0]?.id;
+      if (!id) { topCache.set(k, []); return []; }
+      const t = await fetch(`https://api.deezer.com/artist/${id}/top?limit=${limit}`);
+      const tj = await t.json();
+      const songs = (Array.isArray(tj?.data) ? tj.data : [])
+        .map((tr) => ({
+          id: `dz_${tr.id}`,
+          title: tr.title,
+          artist: tr.artist?.name || name,
+          album: tr.album?.title,
+          imageUrl: tr.album?.cover_big || tr.album?.cover_medium || tr.album?.cover,
+          genre: '',
+          audioUrl: tr.preview, // 30s preview of the real track
+          emoji: '🎵',
+        }))
+        .filter((x) => x.title && x.audioUrl);
+      topCache.set(k, songs);
+      return songs;
+    } catch {
+      topCache.set(k, []);
+      return [];
+    } finally {
+      topInflight.delete(k);
+    }
+  })();
+  topInflight.set(k, p);
+  return p;
+}
+
+// Hook: an artist's real songs → { songs, loading }.
+export function useArtistTopSongs(name) {
+  const [state, setState] = useState({ songs: [], loading: true });
+  useEffect(() => {
+    let alive = true;
+    if (!name) { setState({ songs: [], loading: false }); return; }
+    setState((s) => ({ ...s, loading: true }));
+    getArtistTopSongs(name).then((songs) => { if (alive) setState({ songs, loading: false }); });
+    return () => { alive = false; };
+  }, [name]);
+  return state;
+}
+
 // Returns a real photo for an artist by name (or its own imageUrl if present).
 export function useArtistImage(artist) {
   const own = artist?.imageUrl;
