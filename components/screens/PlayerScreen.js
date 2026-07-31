@@ -91,6 +91,31 @@ const activeLyricLine = (lines, position, duration) => {
   return lines.indexOf(singable[nth]);
 };
 
+// A queue row that shows the song's real cover art (falls back to its emoji until
+// one is fetched). Module scope so the useArtwork hook is legal inside the .map.
+function QueueRow({ song, index, isCurrent, bgColor, onPress, styles }) {
+  const art = useArtwork(song);
+  return (
+    <TouchableOpacity
+      style={[styles.queueItem, isCurrent && { backgroundColor: bgColor + '15', borderLeftWidth: 3, borderLeftColor: bgColor }]}
+      onPress={onPress}
+      activeOpacity={0.85}>
+      <View style={[styles.queueArt, { backgroundColor: bgColor + '20' }]}>
+        {art ? (
+          <Image source={{ uri: art }} style={styles.queueArtImg} />
+        ) : (
+          <Text style={styles.queueEmoji}>{song.emoji || '🎵'}</Text>
+        )}
+      </View>
+      <View style={styles.queueInfo}>
+        <Text style={[styles.queueTitle, isCurrent && { color: bgColor }]} numberOfLines={1}>{song.title}</Text>
+        <Text style={styles.queueArtist} numberOfLines={1}>{song.artist}</Text>
+      </View>
+      {isCurrent && <Ionicons name="musical-notes" size={18} color={bgColor} />}
+    </TouchableOpacity>
+  );
+}
+
 const LYRIC_LINE_H = 46;
 
 // YouTube-style double-tap seek. A second tap on the same side within this window
@@ -1698,50 +1723,31 @@ export default function PlayerScreen({ navigation, route }) {
 
       {/* Queue */}
       {/* Player options — the header "⋯" menu: Share · Add to playlist · Download · Queue */}
-      <Modal visible={showPlayerMenu} transparent animationType="slide" onRequestClose={() => setShowPlayerMenu(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Options</Text>
-
-            <TouchableOpacity style={styles.voRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowShare(true), 260); }} activeOpacity={0.8}>
-              <View style={styles.voIcon}><Ionicons name="share-social-outline" size={20} color={c.icon} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.voTitle}>Share</Text>
-                <Text style={styles.voSub}>Send this song as a link or QR</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+      {/* Compact dropdown anchored to the ⋯ button at the top-right (not a bottom sheet). */}
+      <Modal visible={showPlayerMenu} transparent animationType="fade" onRequestClose={() => setShowPlayerMenu(false)}>
+        <View style={styles.menuOverlay}>
+          <TouchableWithoutFeedback onPress={() => setShowPlayerMenu(false)}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+          <View style={styles.menuDropdown}>
+            <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowShare(true), 220); }} activeOpacity={0.7}>
+              <Ionicons name="share-social-outline" size={18} color={c.icon} />
+              <Text style={styles.menuRowText}>Share</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.voRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => handleAddToPlaylist(displaySong), 260); }} activeOpacity={0.8}>
-              <View style={styles.voIcon}><Ionicons name="add-circle-outline" size={20} color={c.icon} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.voTitle}>Add to playlist</Text>
-                <Text style={styles.voSub}>Save it to one of your playlists</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => handleAddToPlaylist(displaySong), 220); }} activeOpacity={0.7}>
+              <Ionicons name="add-circle-outline" size={18} color={c.icon} />
+              <Text style={styles.menuRowText}>Add to playlist</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.voRow} onPress={() => { setShowPlayerMenu(false); setTimeout(handleDownloadSong, 260); }} activeOpacity={0.8}>
-              <View style={styles.voIcon}><Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color={c.icon} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.voTitle}>{isDownloaded(displaySong.id) ? 'Downloaded' : 'Download'}</Text>
-                <Text style={styles.voSub}>{isDownloaded(displaySong.id) ? 'Saved to Library › Downloads' : 'Save this song to your Downloads'}</Text>
-              </View>
-              {!isDownloaded(displaySong.id) && <Ionicons name="chevron-forward" size={16} color={c.textFaint} />}
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(handleDownloadSong, 220); }} activeOpacity={0.7}>
+              <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={18} color={isDownloaded(displaySong.id) ? bgColor : c.icon} />
+              <Text style={styles.menuRowText}>{isDownloaded(displaySong.id) ? 'Downloaded' : 'Download'}</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.voRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowQueue(true), 260); }} activeOpacity={0.8}>
-              <View style={styles.voIcon}><Ionicons name="list" size={20} color={c.icon} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.voTitle}>Queue</Text>
-                <Text style={styles.voSub}>See what's playing next</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowPlayerMenu(false)}>
-              <Text style={styles.sheetCloseBtnText}>Close</Text>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowQueue(true), 220); }} activeOpacity={0.7}>
+              <Ionicons name="list" size={18} color={c.icon} />
+              <Text style={styles.menuRowText}>Queue</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1801,22 +1807,18 @@ export default function PlayerScreen({ navigation, route }) {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {(currentQueue.length > 0 ? currentQueue : [displaySong]).map((s, index) => (
-                <TouchableOpacity
+                <QueueRow
                   key={s.id + index}
-                  style={[styles.queueItem, s.id === displaySong.id && { backgroundColor: bgColor + '15', borderLeftWidth: 3, borderLeftColor: bgColor }]}
+                  song={s}
+                  index={index}
+                  isCurrent={s.id === displaySong.id}
+                  bgColor={bgColor}
+                  styles={styles}
                   onPress={() => {
                     loadAndPlay(s, currentQueue.length > 0 ? currentQueue : [s], index);
                     setShowQueue(false);
-                  }}>
-                  <View style={[styles.queueArt, { backgroundColor: bgColor + '20' }]}>
-                    <Text style={styles.queueEmoji}>{s.emoji || '🎵'}</Text>
-                  </View>
-                  <View style={styles.queueInfo}>
-                    <Text style={[styles.queueTitle, s.id === displaySong.id && { color: bgColor }]}>{s.title}</Text>
-                    <Text style={styles.queueArtist}>{s.artist}</Text>
-                  </View>
-                  {s.id === displaySong.id && <Ionicons name="musical-notes" size={18} color={bgColor} />}
-                </TouchableOpacity>
+                  }}
+                />
               ))}
             </ScrollView>
             <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowQueue(false)}>
@@ -2047,6 +2049,17 @@ const makeStyles = (c) => StyleSheet.create({
   offlineBanner: { position: 'absolute', bottom: 30, left: 20, right: 20, backgroundColor: '#ff4444', padding: 12, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   offlineText: { color: c.text, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  // Top-right ⋯ dropdown: compact, ~half-width, anchored just under the header button.
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
+  menuDropdown: {
+    position: 'absolute', top: 102, right: 16, width: Math.min(220, SCREEN_WIDTH * 0.55),
+    backgroundColor: c.surface, borderRadius: 16, paddingVertical: 4,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 12,
+  },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 16 },
+  menuRowText: { color: c.text, fontSize: 14, fontWeight: '600' },
+  menuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 12 },
   modalSheet: { backgroundColor: c.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, maxHeight: SCREEN_HEIGHT * 0.9 },
   modalHandle: { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
@@ -2124,7 +2137,8 @@ const makeStyles = (c) => StyleSheet.create({
   voTitle: { color: c.text, fontSize: 15, fontWeight: '700' },
   voSub: { color: c.textDim, fontSize: 12, marginTop: 2 },
   queueItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, marginBottom: 8, backgroundColor: c.elevated, gap: 12 },
-  queueArt: { width: 46, height: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  queueArt: { width: 46, height: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  queueArtImg: { width: '100%', height: '100%' },
   queueEmoji: { fontSize: 22 },
   queueInfo: { flex: 1 },
   queueTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
