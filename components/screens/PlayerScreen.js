@@ -1230,18 +1230,28 @@ export default function PlayerScreen({ navigation, route }) {
             ]}>
               <View style={styles.lyricsPanelHeader}>
                 <Text style={[styles.lyricsPanelTitle, { color: bgColor }]}>Lyrics</Text>
-                <TouchableOpacity onPress={toggleLyrics}>
-                  <Ionicons name="chevron-up" size={22} color={c.textFaint} />
-                </TouchableOpacity>
+                <View style={styles.lyricsPanelHeaderBtns}>
+                  {lyricLines.length > 0 && (
+                    <TouchableOpacity onPress={() => setShowLyricsFull(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="expand" size={18} color={bgColor} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={toggleLyrics} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="chevron-up" size={22} color={c.textFaint} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              {/* Tapping the sheet opens the lyrics full-screen, following the song.
-                  The line being sung right now is bold + bright and follows the song
-                  in real time, so the user can see exactly where the artist is. */}
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={() => lyricLines.length > 0 && setShowLyricsFull(true)}>
-                {lyricLines.length > 0 ? (
-                  lyricLines.map((line, i) => (
+              {/* Lyrics scroll INDEPENDENTLY inside this fixed-height area — scrolling
+                  here doesn't move the whole player. The line being sung right now is
+                  bold + bright and follows the song, so you can see where the artist is.
+                  Tap the expand icon above for the full-screen, auto-scrolling view. */}
+              {lyricLines.length > 0 ? (
+                <ScrollView
+                  style={styles.lyricsPanelScroll}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  contentContainerStyle={styles.lyricsPanelScrollContent}>
+                  {lyricLines.map((line, i) => (
                     line.isSection ? (
                       <Text key={i} style={[styles.lyricsPanelSection, { color: bgColor }]}>{line.text}</Text>
                     ) : (
@@ -1255,19 +1265,13 @@ export default function PlayerScreen({ navigation, route }) {
                         {line.text}
                       </Text>
                     )
-                  ))
-                ) : (
-                  <Text style={styles.lyricsText}>
-                    {lyricsStatus === 'loading' ? 'Loading lyrics…' : 'No lyrics available for this song.'}
-                  </Text>
-                )}
-                {lyricLines.length > 0 && (
-                  <View style={styles.lyricsExpandHint}>
-                    <Ionicons name="expand" size={13} color={bgColor} />
-                    <Text style={[styles.lyricsExpandHintText, { color: bgColor }]}>Tap for full screen</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : (
+                <Text style={styles.lyricsText}>
+                  {lyricsStatus === 'loading' ? 'Loading lyrics…' : 'No lyrics available for this song.'}
+                </Text>
+              )}
             </Animated.View>
           )}
 
@@ -2028,7 +2032,10 @@ const makeStyles = (c) => StyleSheet.create({
   actionBtn: { alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8 },
   actionLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
   premiumDot: { position: 'absolute', top: -3, right: -3 },
-  lyricsPanel: { marginHorizontal: 20, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1 },
+  lyricsPanel: { marginHorizontal: 20, backgroundColor: 'rgba(0,0,0,0.38)', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1 },
+  lyricsPanelHeaderBtns: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  lyricsPanelScroll: { maxHeight: SCREEN_HEIGHT * 0.34 },
+  lyricsPanelScrollContent: { paddingVertical: 4 },
   lyricsExpandHint: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 },
   lyricsExpandHintText: { fontSize: 12, fontWeight: '800' },
 
