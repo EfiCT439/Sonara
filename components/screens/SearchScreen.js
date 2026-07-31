@@ -8,7 +8,7 @@ import { Audio } from 'expo-av';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
 import { searchAudius } from '../../services/audius';
-import { useArtwork } from '../../services/artwork';
+import { useArtwork, useTrendingSongs } from '../../services/artwork';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_W = Math.floor(SCREEN_W * 0.38);
@@ -268,7 +268,10 @@ export default function SearchScreen({ navigation }) {
   const countdownRef = useRef(null);
   const pulseLoopRef = useRef(null);
 
-  const discoverSongs = useMemo(() => {
+  // Real trending songs (Deezer) carry their own cover art, so the Discover cards
+  // actually show images. Falls back to the hardcoded genre picks if the fetch fails.
+  const trendingSongs = useTrendingSongs(20);
+  const discoverFallback = useMemo(() => {
     const seen = new Set();
     const results = [];
     recentlyPlayed.slice(0, 5).forEach(s => {
@@ -288,6 +291,7 @@ export default function SearchScreen({ navigation }) {
     });
     return results;
   }, [listeningHabits, recentlyPlayed]);
+  const discoverSongs = trendingSongs.length ? trendingSongs : discoverFallback;
 
   // ── Song Recognition ─────────────────────────────────────────────────────
   const stopPulse = useCallback(() => {

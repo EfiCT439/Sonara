@@ -169,6 +169,7 @@ export default function PlayerScreen({ navigation, route }) {
   const [showQRCode, setShowQRCode] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showVideoOptions, setShowVideoOptions] = useState(false); // one "⋯" menu: Queue · Download · Sleep Timer
+  const [showPlayerMenu, setShowPlayerMenu] = useState(false); // audio player "⋯" menu: Share · Add to playlist · Download · Queue
   const [showAboutArtist, setShowAboutArtist] = useState(false);
   const [showRepeatOptions, setShowRepeatOptions] = useState(false);
   const [showQualityOptions, setShowQualityOptions] = useState(false);
@@ -360,6 +361,16 @@ export default function PlayerScreen({ navigation, route }) {
     }
     downloadSong({ ...displaySong, videoUrl: videoSource });
     Alert.alert('Downloaded ✅', `"${displaySong.title}" saved to Library › Downloads › Music Videos.`);
+  };
+
+  // Download the current song (audio) — from the player "⋯" menu.
+  const handleDownloadSong = () => {
+    if (isDownloaded(displaySong.id)) {
+      Alert.alert('Already Downloaded', `"${displaySong.title}" is in Library › Downloads.`);
+      return;
+    }
+    downloadSong(displaySong);
+    Alert.alert('Downloaded ✅', `"${displaySong.title}" saved to Library › Downloads.`);
   };
 
   // ── Video mode (YouTube) lifecycle ──────────────────────────────
@@ -670,10 +681,11 @@ export default function PlayerScreen({ navigation, route }) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: bgColor }]}>
       <StatusBar barStyle="light-content" />
-      <View style={[styles.bgGlow, { backgroundColor: bgColor }]} />
-      <View style={styles.bgDark} />
+      {/* Whole-screen background adapts to the song image's dominant colour; a
+          uniform dark scrim over it keeps text/controls readable on any colour. */}
+      <View pointerEvents="none" style={styles.bgScrim} />
 
       {/* ── Video fullscreen (landscape, YouTube, Sonara-only controls) ── */}
       {isVideoMode && ytFull && (
@@ -1026,8 +1038,8 @@ export default function PlayerScreen({ navigation, route }) {
                     <Text style={styles.genreBadgeText}>{displaySong.genre || 'Music'}</Text>
                   </View>
                 </View>
-                <TouchableOpacity style={styles.headerBtn} onPress={() => setShowQueue(true)}>
-                  <Ionicons name="list" size={24} color={c.icon} />
+                <TouchableOpacity style={styles.headerBtn} onPress={() => setShowPlayerMenu(true)}>
+                  <Ionicons name="ellipsis-horizontal" size={24} color={c.icon} />
                 </TouchableOpacity>
               </View>
 
@@ -1167,13 +1179,33 @@ export default function PlayerScreen({ navigation, route }) {
                   <Ionicons name="chevron-up" size={22} color={c.textFaint} />
                 </TouchableOpacity>
               </View>
-              {/* Tapping the sheet opens the lyrics full-screen, following the song. */}
+              {/* Tapping the sheet opens the lyrics full-screen, following the song.
+                  The line being sung right now is bold + bright and follows the song
+                  in real time, so the user can see exactly where the artist is. */}
               <TouchableOpacity
                 activeOpacity={0.75}
                 onPress={() => lyricLines.length > 0 && setShowLyricsFull(true)}>
-                <Text style={styles.lyricsText}>
-                  {plainLyrics || (lyricsStatus === 'loading' ? 'Loading lyrics…' : 'No lyrics available for this song.')}
-                </Text>
+                {lyricLines.length > 0 ? (
+                  lyricLines.map((line, i) => (
+                    line.isSection ? (
+                      <Text key={i} style={[styles.lyricsPanelSection, { color: bgColor }]}>{line.text}</Text>
+                    ) : (
+                      <Text
+                        key={i}
+                        style={[
+                          styles.lyricsPanelLine,
+                          i === activeLine && styles.lyricsPanelLineActive,
+                          i < activeLine && styles.lyricsPanelLinePast,
+                        ]}>
+                        {line.text}
+                      </Text>
+                    )
+                  ))
+                ) : (
+                  <Text style={styles.lyricsText}>
+                    {lyricsStatus === 'loading' ? 'Loading lyrics…' : 'No lyrics available for this song.'}
+                  </Text>
+                )}
                 {lyricLines.length > 0 && (
                   <View style={styles.lyricsExpandHint}>
                     <Ionicons name="expand" size={13} color={bgColor} />
@@ -1665,6 +1697,56 @@ export default function PlayerScreen({ navigation, route }) {
       </Modal>
 
       {/* Queue */}
+      {/* Player options — the header "⋯" menu: Share · Add to playlist · Download · Queue */}
+      <Modal visible={showPlayerMenu} transparent animationType="slide" onRequestClose={() => setShowPlayerMenu(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Options</Text>
+
+            <TouchableOpacity style={styles.voRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowShare(true), 260); }} activeOpacity={0.8}>
+              <View style={styles.voIcon}><Ionicons name="share-social-outline" size={20} color={c.icon} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voTitle}>Share</Text>
+                <Text style={styles.voSub}>Send this song as a link or QR</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.voRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => handleAddToPlaylist(displaySong), 260); }} activeOpacity={0.8}>
+              <View style={styles.voIcon}><Ionicons name="add-circle-outline" size={20} color={c.icon} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voTitle}>Add to playlist</Text>
+                <Text style={styles.voSub}>Save it to one of your playlists</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.voRow} onPress={() => { setShowPlayerMenu(false); setTimeout(handleDownloadSong, 260); }} activeOpacity={0.8}>
+              <View style={styles.voIcon}><Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={20} color={c.icon} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voTitle}>{isDownloaded(displaySong.id) ? 'Downloaded' : 'Download'}</Text>
+                <Text style={styles.voSub}>{isDownloaded(displaySong.id) ? 'Saved to Library › Downloads' : 'Save this song to your Downloads'}</Text>
+              </View>
+              {!isDownloaded(displaySong.id) && <Ionicons name="chevron-forward" size={16} color={c.textFaint} />}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.voRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowQueue(true), 260); }} activeOpacity={0.8}>
+              <View style={styles.voIcon}><Ionicons name="list" size={20} color={c.icon} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voTitle}>Queue</Text>
+                <Text style={styles.voSub}>See what's playing next</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={c.textFaint} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowPlayerMenu(false)}>
+              <Text style={styles.sheetCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Video options — ONE "⋯" menu holding independent Queue · Download · Timer */}
       <Modal visible={showVideoOptions} transparent animationType="slide" onRequestClose={() => setShowVideoOptions(false)}>
         <View style={styles.modalOverlay}>
@@ -1758,6 +1840,7 @@ const makeStyles = (c) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.bg },
   bgGlow: { position: 'absolute', top: 0, left: 0, right: 0, height: 260, opacity: 0.2 },
   bgDark: { position: 'absolute', top: 160, left: 0, right: 0, bottom: 0, backgroundColor: c.bg },
+  bgScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
   scrollContent: { paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 55, marginBottom: 20 },
   headerBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
@@ -1956,6 +2039,11 @@ const makeStyles = (c) => StyleSheet.create({
   lyricsPanelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   lyricsPanelTitle: { fontSize: 16, fontWeight: '800' },
   lyricsText: { color: 'rgba(255,255,255,0.75)', fontSize: 15, lineHeight: 30, textAlign: 'center' },
+  // Per-line lyrics in the inline panel: dim by default, the line being sung is bold + bright.
+  lyricsPanelLine: { color: 'rgba(255,255,255,0.5)', fontSize: 15, lineHeight: 30, textAlign: 'center', fontWeight: '500' },
+  lyricsPanelLineActive: { color: '#fff', fontWeight: '900', fontSize: 17 },
+  lyricsPanelLinePast: { color: 'rgba(255,255,255,0.32)' },
+  lyricsPanelSection: { fontSize: 12, fontWeight: '800', textAlign: 'center', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 2, opacity: 0.9 },
   offlineBanner: { position: 'absolute', bottom: 30, left: 20, right: 20, backgroundColor: '#ff4444', padding: 12, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   offlineText: { color: c.text, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },

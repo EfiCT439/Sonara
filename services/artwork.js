@@ -175,6 +175,51 @@ export async function getArtistTopSongs(name, limit = 25) {
   return p;
 }
 
+// Real trending songs (Deezer global chart) — real titles + covers + previews.
+// Used to fill "Discover Something New" with images that actually appear.
+let _trendingCache = null;
+let _trendingInflight = null;
+
+export async function getTrendingSongs(limit = 20) {
+  if (_trendingCache) return _trendingCache;
+  if (_trendingInflight) return _trendingInflight;
+  _trendingInflight = (async () => {
+    try {
+      const r = await fetch(`https://api.deezer.com/chart/0/tracks?limit=${limit}`);
+      const j = await r.json();
+      const songs = (Array.isArray(j?.data) ? j.data : [])
+        .map((tr) => ({
+          id: `dz_${tr.id}`,
+          title: tr.title,
+          artist: tr.artist?.name || 'Unknown',
+          album: tr.album?.title,
+          imageUrl: tr.album?.cover_big || tr.album?.cover_medium || tr.album?.cover,
+          genre: '',
+          audioUrl: tr.preview,
+          emoji: '🎵',
+        }))
+        .filter((x) => x.title && x.imageUrl);
+      _trendingCache = songs;
+      return songs;
+    } catch {
+      return [];
+    } finally {
+      _trendingInflight = null;
+    }
+  })();
+  return _trendingInflight;
+}
+
+export function useTrendingSongs(limit = 20) {
+  const [songs, setSongs] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    getTrendingSongs(limit).then((s) => { if (alive) setSongs(s); });
+    return () => { alive = false; };
+  }, [limit]);
+  return songs;
+}
+
 // Hook: an artist's real songs → { songs, loading }.
 export function useArtistTopSongs(name) {
   const [state, setState] = useState({ songs: [], loading: true });
