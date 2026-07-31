@@ -113,7 +113,7 @@ function SongItem({ styles, c, song, index, onPress }) {
       <Text style={styles.songIdx}>{index + 1}</Text>
       <View style={styles.itemArt}>
         {art
-          ? <Image source={{ uri: art }} style={styles.itemArtImage} />
+          ? <Image source={{ uri: art }} style={styles.itemArtImage} resizeMode="cover" />
           : <Text style={styles.itemEmoji}>{song.emoji || '🎵'}</Text>}
       </View>
       <View style={styles.itemInfo}>
@@ -1240,7 +1240,7 @@ const makeStyles = (c) => StyleSheet.create({
     padding: 12, marginBottom: 8, gap: 12,
   },
   itemArt: {
-    width: 52, height: 52, borderRadius: 10,
+    width: 60, height: 60, borderRadius: 10,
     backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
