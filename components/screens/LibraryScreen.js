@@ -106,7 +106,7 @@ function ArtistItem({ styles, c, artist, onPress }) {
   );
 }
 
-function SongItem({ styles, c, song, index, onPress }) {
+function SongItem({ styles, c, song, index, onPress, onDelete }) {
   const art = useArtwork(song);
   return (
     <TouchableOpacity style={styles.itemRow} onPress={onPress} activeOpacity={0.75}>
@@ -120,7 +120,16 @@ function SongItem({ styles, c, song, index, onPress }) {
         <Text style={styles.itemTitle}>{song.title}</Text>
         <Text style={styles.itemSub}>{song.artist}</Text>
       </View>
-      <Ionicons name="play" size={13} color={c.textFaint} />
+      {onDelete ? (
+        <TouchableOpacity
+          onPress={onDelete}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={styles.itemDeleteBtn}>
+          <Ionicons name="trash-outline" size={18} color={c.textFaint} />
+        </TouchableOpacity>
+      ) : (
+        <Ionicons name="play" size={13} color={c.textFaint} />
+      )}
     </TouchableOpacity>
   );
 }
@@ -310,6 +319,7 @@ export default function LibraryScreen({ navigation }) {
     isPremium, likedSongs, userPlaylists, followedArtists, favouriteArtists,
     recentlyPlayed, createPlaylist, deletePlaylist, addFollowedArtist,
     loadAndPlay, canCreatePlaylist, FREE_SONGS_PER_PLAYLIST, createdSongs, downloadedSongs,
+    removeDownload,
   } = useUser();
   const { colors: c } = useUser();
   const styles = makeStyles(c);
@@ -510,6 +520,18 @@ export default function LibraryScreen({ navigation }) {
   };
 
 
+
+  // Remove a downloaded song/video from Library › Downloads (with confirmation).
+  const confirmRemoveDownload = (song) => {
+    Alert.alert(
+      'Remove download',
+      `Remove "${song.title}" from your downloads?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => removeDownload(song.id) },
+      ],
+    );
+  };
 
   const exitDrill = () => { setDrilldownView(null); setDrillSearch(''); };
 
@@ -780,6 +802,7 @@ export default function LibraryScreen({ navigation }) {
                     song={song}
                     index={idx}
                     onPress={() => openVideo(song, downloadVideos, idx)}
+                    onDelete={() => confirmRemoveDownload(song)}
                   />
                 ))
               ) : (
@@ -800,6 +823,7 @@ export default function LibraryScreen({ navigation }) {
                     song={song}
                     index={idx}
                     onPress={() => openSong(song, downloadAudios, idx)}
+                    onDelete={() => confirmRemoveDownload(song)}
                   />
                 ))
               ) : (
@@ -1251,6 +1275,7 @@ const makeStyles = (c) => StyleSheet.create({
   },
   itemEmoji: { fontSize: 24 },
   itemArtImage: { width: '100%', height: '100%', borderRadius: 10 },
+  itemDeleteBtn: { padding: 6 },
   artistArtImage: { width: '100%', height: '100%', borderRadius: 24 },
   itemInfo: { flex: 1 },
   itemTitle: { color: c.text, fontSize: 15.5, fontWeight: '800', letterSpacing: -0.2 },

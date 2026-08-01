@@ -586,6 +586,9 @@ export function UserProvider({ children }) {
     setDownloadedSongs(prev => (prev.some(s => s.id === song.id) ? prev : [song, ...prev]));
   };
   const isDownloaded = (id) => downloadedSongs.some(s => s.id === id);
+  const removeDownload = (id) => {
+    setDownloadedSongs(prev => prev.filter(s => s.id !== id));
+  };
 
   const deletePlaylist = (id) => {
     setUserPlaylists(prev => prev.filter(p => p.id !== id || p.isLikedSongs));
@@ -644,7 +647,7 @@ export function UserProvider({ children }) {
       likedSongs, toggleLikeSong, isSongLiked,
       userPlaylists, setUserPlaylists, addSongToPlaylist, removeSongFromPlaylist, createPlaylist, createGeneratedPlaylist, deletePlaylist, updatePlaylist,
       createdSongs, addCreatedSong, updateCreatedSong,
-      downloadedSongs, downloadSong, isDownloaded,
+      downloadedSongs, downloadSong, isDownloaded, removeDownload,
       canCreatePlaylist, canAddSongToPlaylist, customPlaylistCount, FREE_SONGS_PER_PLAYLIST, FREE_PLAYLIST_LIMIT,
       notifications, setNotifications, markAllNotificationsRead, unreadCount,
       listeningHabits, trackSongPlay, getTopGenres, getTopArtists,
