@@ -220,6 +220,71 @@ export function useTrendingSongs(limit = 20) {
   return songs;
 }
 
+// ── Artist biographies (Wikipedia REST summary, free, no key) ───────────────
+// A real, UNIQUE description for each artist — pulled from their Wikipedia page.
+// Disambiguates common names (e.g. "Drake") by retrying with a music qualifier.
+// Trimmed to a couple of sentences for the About-Artist sheet. null if not found.
+const bioCache = new Map();     // name -> bio | null
+const bioInflight = new Map();
+
+const MUSIC_HINT = /(singer|rapper|musician|songwriter|band|producer|\bdj\b|group|duo|artist|record)/i;
+
+function trimBio(text, max = 320) {
+  const t = (text || '').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const lastStop = cut.lastIndexOf('. ');
+  return (lastStop > 120 ? cut.slice(0, lastStop + 1) : cut.trimEnd() + '…');
+}
+
+async function fetchWikiSummary(title) {
+  try {
+    const slug = encodeURIComponent(title.replace(/\s+/g, '_'));
+    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${slug}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function getArtistBio(name) {
+  if (!name) return null;
+  const k = name.toLowerCase();
+  if (bioCache.has(k)) return bioCache.get(k);
+  if (bioInflight.has(k)) return bioInflight.get(k);
+
+  const p = (async () => {
+    // Try the plain name, then music-qualified variants for ambiguous names.
+    const candidates = [name, `${name} (musician)`, `${name} (singer)`, `${name} (rapper)`, `${name} (band)`];
+    let bio = null;
+    for (const title of candidates) {
+      const j = await fetchWikiSummary(title);
+      if (!j || j.type === 'disambiguation' || !j.extract) continue;
+      const looksMusical = MUSIC_HINT.test(`${j.description || ''} ${j.extract}`) || title !== name;
+      if (looksMusical) { bio = trimBio(j.extract); break; }
+    }
+    bioCache.set(k, bio);
+    return bio;
+  })();
+  bioInflight.set(k, p);
+  return p;
+}
+
+// Hook: a real, unique artist bio (or null until/unless one is found).
+export function useArtistBio(name) {
+  const [bio, setBio] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setBio(null);
+    if (name) getArtistBio(name).then((b) => { if (alive) setBio(b); });
+    return () => { alive = false; };
+  }, [name]);
+  return bio;
+}
+
 // Hook: an artist's real songs → { songs, loading }.
 export function useArtistTopSongs(name) {
   const [state, setState] = useState({ songs: [], loading: true });

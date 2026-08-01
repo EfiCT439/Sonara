@@ -11,7 +11,7 @@ import { Video, ResizeMode } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { useUser } from '../../context/UserContext';
-import { useArtwork, useDominantColor, useTrendingSongs } from '../../services/artwork';
+import { useArtwork, useDominantColor, useTrendingSongs, useArtistImage, useArtistBio } from '../../services/artwork';
 import { useLyrics, activeSyncedIndex } from '../../services/lyricsApi';
 import { findYouTubeId } from '../../services/youtube';
 
@@ -239,11 +239,17 @@ export default function PlayerScreen({ navigation, route }) {
   const displaySong = currentTrack || route?.params?.song || SAMPLE_SONGS[0];
   const displayArt = useArtwork(displaySong);
 
-  const artistInfo = ARTIST_INFO[displaySong.artist] || {
+  const curatedArtist = ARTIST_INFO[displaySong.artist];
+  const artistInfo = curatedArtist || {
     bio: `${displaySong.artist} is a talented musician creating amazing music for fans worldwide.`,
-    genre: 'Music',
+    genre: displaySong.genre || 'Music',
     topSongs: [],
   };
+  // Real, per-artist photo + unique bio (Deezer / Wikipedia). Prefer a curated bio
+  // when we have one, else the fetched Wikipedia bio, else the generic fallback.
+  const artistPhoto = useArtistImage(displaySong.artist);
+  const fetchedBio = useArtistBio(displaySong.artist);
+  const artistBio = curatedArtist?.bio || fetchedBio || artistInfo.bio;
 
   const isLiked = isSongLiked(displaySong.id);
   // Background adapts to the playing song's cover art (any genre); falls back to
@@ -1291,14 +1297,16 @@ export default function PlayerScreen({ navigation, route }) {
             <ScrollView showsVerticalScrollIndicator={false}>
               <View style={[styles.artistHero, { backgroundColor: bgColor + '20' }]}>
                 <View style={[styles.artistAvatarCircle, { backgroundColor: bgColor + '40', borderColor: bgColor }]}>
-                  <Text style={styles.artistAvatarEmoji}>🎤</Text>
+                  {artistPhoto
+                    ? <Image source={{ uri: artistPhoto }} style={styles.artistAvatarImg} />
+                    : <Text style={styles.artistAvatarEmoji}>🎤</Text>}
                 </View>
                 <Text style={styles.artistHeroName}>{displaySong.artist}</Text>
                 <View style={[styles.artistGenreBadge, { backgroundColor: bgColor + '30', borderColor: bgColor }]}>
                   <Text style={[styles.artistGenreBadgeText, { color: bgColor }]}>{artistInfo.genre}</Text>
                 </View>
               </View>
-              <Text style={styles.artistBio}>{artistInfo.bio}</Text>
+              <Text style={styles.artistBio}>{artistBio}</Text>
               <Text style={[styles.topSongsHeading, { color: bgColor }]}>🔥 Top 3 Songs — Tap to Play</Text>
               {artistInfo.topSongs.map((topSong, i) => (
                 <TouchableOpacity
@@ -2183,7 +2191,8 @@ const makeStyles = (c) => StyleSheet.create({
   queueTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
   queueArtist: { color: c.textFaint, fontSize: 12, marginTop: 2 },
   artistHero: { borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 20 },
-  artistAvatarCircle: { width: 90, height: 90, borderRadius: 45, alignItems: 'center', justifyContent: 'center', borderWidth: 2, marginBottom: 12 },
+  artistAvatarCircle: { width: 90, height: 90, borderRadius: 45, alignItems: 'center', justifyContent: 'center', borderWidth: 2, marginBottom: 12, overflow: 'hidden' },
+  artistAvatarImg: { width: '100%', height: '100%' },
   artistAvatarEmoji: { fontSize: 44 },
   artistHeroName: { color: c.text, fontSize: 22, fontWeight: '800', marginBottom: 8 },
   artistGenreBadge: { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 12, borderWidth: 1 },
