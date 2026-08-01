@@ -46,3 +46,6 @@ yarn-error.*
 
 # YouTube API key (keep private)
 youtubeConfig.js
+
+# Jamendo client_id (keep private)
+jamendoConfig.js

@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
-import { searchAudius } from '../../services/audius';
+import { searchJamendo } from '../../services/jamendo';
 import { useArtwork, useTrendingSongs } from '../../services/artwork';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -251,8 +251,8 @@ export default function SearchScreen({ navigation }) {
 
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
-  const [audiusLoading, setAudiusLoading] = useState(false);
-  const audiusReqRef = useRef(0); // guards against stale (out-of-order) Audius responses
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const catalogReqRef = useRef(0); // guards against stale (out-of-order) catalog responses
   const [selectedGenre, setSelectedGenre] = useState(null);
   const [focused, setFocused] = useState(false);
 
@@ -440,30 +440,30 @@ export default function SearchScreen({ navigation }) {
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleSearch = (text) => {
     setQuery(text);
-    if (!text.trim()) { setSearchResults([]); setAudiusLoading(false); return; }
-    // Instant local matches so results feel immediate; real YouTube + Audius songs
+    if (!text.trim()) { setSearchResults([]); setCatalogLoading(false); return; }
+    // Instant local matches so results feel immediate; real YouTube + Jamendo songs
     // stream in via the debounced effect below.
     setSearchResults(localMatches(text));
   };
 
-  // Fetch the real catalog (Audius) and merge it with the instant local matches.
+  // Fetch the real catalog (Jamendo) and merge it with the instant local matches.
   // Debounced, and guarded so a slow response for an old query can't overwrite
   // results for the current one.
   useEffect(() => {
     const term = query.trim();
-    if (!term) { setAudiusLoading(false); return; }
-    const reqId = ++audiusReqRef.current;
-    setAudiusLoading(true);
+    if (!term) { setCatalogLoading(false); return; }
+    const reqId = ++catalogReqRef.current;
+    setCatalogLoading(true);
     const timer = setTimeout(async () => {
-      const audius = await searchAudius(term, 15);
-      if (reqId !== audiusReqRef.current) return; // a newer query superseded this one
+      const catalog = await searchJamendo(term, 15);
+      if (reqId !== catalogReqRef.current) return; // a newer query superseded this one
       const seen = new Set();
       const merged = [];
-      for (const s of [...localMatches(term), ...audius]) {
+      for (const s of [...localMatches(term), ...catalog]) {
         if (!seen.has(s.id)) { seen.add(s.id); merged.push(s); }
       }
       setSearchResults(merged);
-      setAudiusLoading(false);
+      setCatalogLoading(false);
     }, 400);
     return () => clearTimeout(timer);
   }, [query]);
@@ -584,7 +584,7 @@ export default function SearchScreen({ navigation }) {
               <>
                 <View style={styles.resultsHeader}>
                   <Text style={styles.sectionTitle}>Results · {searchResults.length}</Text>
-                  {audiusLoading && <ActivityIndicator size="small" color={c.textDim} />}
+                  {catalogLoading && <ActivityIndicator size="small" color={c.textDim} />}
                 </View>
                 <View style={{ marginTop: 14 }}>
                   {searchResults.map((item, index) => (
@@ -598,7 +598,7 @@ export default function SearchScreen({ navigation }) {
                   ))}
                 </View>
               </>
-            ) : audiusLoading ? (
+            ) : catalogLoading ? (
               <View style={styles.emptyState}>
                 <ActivityIndicator size="small" color={c.textDim} />
                 <Text style={styles.emptySub}>Searching…</Text>
