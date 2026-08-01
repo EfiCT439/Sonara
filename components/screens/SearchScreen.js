@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
-import { searchJamendo } from '../../services/jamendo';
+import { searchAudius } from '../../services/audius';
 import { useArtwork, useTrendingSongs } from '../../services/artwork';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -441,12 +441,12 @@ export default function SearchScreen({ navigation }) {
   const handleSearch = (text) => {
     setQuery(text);
     if (!text.trim()) { setSearchResults([]); setCatalogLoading(false); return; }
-    // Instant local matches so results feel immediate; real YouTube + Jamendo songs
+    // Instant local matches so results feel immediate; real YouTube + Audius songs
     // stream in via the debounced effect below.
     setSearchResults(localMatches(text));
   };
 
-  // Fetch the real catalog (Jamendo) and merge it with the instant local matches.
+  // Fetch the real catalog (Audius) and merge it with the instant local matches.
   // Debounced, and guarded so a slow response for an old query can't overwrite
   // results for the current one.
   useEffect(() => {
@@ -455,7 +455,7 @@ export default function SearchScreen({ navigation }) {
     const reqId = ++catalogReqRef.current;
     setCatalogLoading(true);
     const timer = setTimeout(async () => {
-      const catalog = await searchJamendo(term, 15);
+      const catalog = await searchAudius(term, 15);
       if (reqId !== catalogReqRef.current) return; // a newer query superseded this one
       const seen = new Set();
       const merged = [];

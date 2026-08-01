@@ -5,7 +5,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 import api from '../services/api';
-import { resolvePlayableUrl } from '../services/jamendo';
+import { resolvePlayableUrl } from '../services/audius';
 import { themeFor } from '../services/theme';
 
 // The default playlist set for a signed-out / brand-new user.
@@ -294,9 +294,9 @@ export function UserProvider({ children }) {
       } else {
         disposePreload();           // preloaded a different track — drop it
         // Resolve a real, directly-playable URL for ANY song: the placeholder
-        // (soundhelix) catalog is matched to a real Jamendo track (which returns a
-        // direct mp3), and real urls pass through. This is what makes tapping a
-        // local song play real audio instead of the sample.
+        // (soundhelix) catalog is matched to a real Audius track, Audius endpoints
+        // resolve to their direct mp3, and real urls pass through. This is what
+        // makes tapping a local song play real audio instead of the sample.
         const uri = await resolvePlayableUrl(song);
         if (token !== loadTokenRef.current) return; // superseded while resolving
         const created = await Audio.Sound.createAsync(
