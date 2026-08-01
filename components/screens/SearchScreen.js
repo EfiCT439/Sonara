@@ -241,7 +241,7 @@ function HistoryRow({ styles, c, song, onOpen, onRemove }) {
 }
 
 // ── Main Screen ──────────────────────────────────────────────────────────────
-export default function SearchScreen({ navigation, route }) {
+export default function SearchScreen({ navigation }) {
   const {
     listeningHabits, getTopGenres, loadAndPlay, recentlyPlayed,
     searchHistory, setSearchHistory, addToSearchHistory,
@@ -436,14 +436,6 @@ export default function SearchScreen({ navigation, route }) {
     await cleanupRecognition();
     await openRecognition();
   };
-
-  // Auto-start recognition when arriving from the Player's "Identify" button.
-  // The param is a fresh timestamp each time, so repeated taps re-trigger it.
-  const recognizeTrigger = route?.params?.recognize;
-  useEffect(() => {
-    if (recognizeTrigger) openRecognition();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recognizeTrigger]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleSearch = (text) => {

@@ -1226,13 +1226,6 @@ export default function PlayerScreen({ navigation, route }) {
               <Ionicons name="share-social-outline" size={22} color="rgba(255,255,255,0.5)" />
               <Text style={styles.actionLabel}>Share</Text>
             </TouchableOpacity>
-            {/* Identify — reuses Search's recognition flow (opens it auto-started). */}
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => navigation.navigate('MainTabs', { screen: 'Search', params: { recognize: Date.now() } })}>
-              <Ionicons name="mic-outline" size={22} color="rgba(255,255,255,0.5)" />
-              <Text style={styles.actionLabel}>Identify</Text>
-            </TouchableOpacity>
           </View>
 
           {/* LYRICS */}
