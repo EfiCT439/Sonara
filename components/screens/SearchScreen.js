@@ -1022,8 +1022,7 @@ const makeStyles = (c) => StyleSheet.create({
   // SongRow
   resultRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: c.surface, borderRadius: 10,
-    padding: 11, marginBottom: 8, gap: 12,
+    paddingVertical: 9, marginBottom: 2, gap: 12,
   },
   resultArt: {
     width: 44, height: 44, borderRadius: 8,
@@ -1044,8 +1043,7 @@ const makeStyles = (c) => StyleSheet.create({
   // History
   historyItem: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: c.surface, borderRadius: 10,
-    padding: 11, marginBottom: 8, gap: 10,
+    paddingVertical: 9, marginBottom: 2, gap: 12,
   },
   historyArt: {
     width: 40, height: 40, backgroundColor: c.elevated,

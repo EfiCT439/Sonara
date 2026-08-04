@@ -1260,8 +1260,7 @@ const makeStyles = (c) => StyleSheet.create({
   // Generic item row
   itemRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: c.surface, borderRadius: 10,
-    padding: 12, marginBottom: 8, gap: 12,
+    paddingVertical: 8, marginBottom: 2, gap: 12,
   },
   itemArt: {
     width: 60, height: 60, borderRadius: 10,
