@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Sonara",
-    "slug": "sonara",
+    "slug": "efi-tanyi",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -9,7 +9,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#121212"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
@@ -25,10 +25,11 @@
       "package": "com.sonara.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0B120E"
+        "backgroundColor": "#000000"
       },
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -36,6 +37,12 @@
     },
     "plugins": [
       "expo-barcode-scanner"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "330ad5bf-4f44-4105-a18b-838e470b1aa0"
+      }
+    },
+    "owner": "efi114s-team"
   }
 }
