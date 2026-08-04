@@ -33,8 +33,40 @@ function parseLrc(lrc) {
 const _cache = {};
 const NONE = { synced: [], plain: '', status: 'none' };
 
-// Fetch lyrics for a song. Uses LRCLIB's /search (fuzzy — forgiving of missing
-// album/duration) and prefers a result that carries synced lyrics.
+// Strip the decorations that stop LRCLIB from matching: "(feat. …)", "(Official
+// Video)", "[Remastered]", "- Live", trailing "feat …", etc.
+function cleanTitle(t) {
+  return (t || '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\s*-\s*(official|lyric[s]?|audio|video|visualizer|remaster(?:ed)?|live|radio edit|extended|mono|stereo).*$/i, ' ')
+    .replace(/\b(feat\.?|ft\.?|featuring)\b.*$/i, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function cleanArtist(a) {
+  return (a || '')
+    .replace(/\b(feat\.?|ft\.?|featuring)\b.*$/i, ' ')
+    .split(/,|&|\bx\b/i)[0]
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function lrcSearch(params) {
+  try {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${API}/search?${qs}`, { headers: { 'Lrclib-Client': 'Sonara' } });
+    if (!res.ok) return [];
+    const arr = await res.json();
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+// Fetch lyrics for a song. Tries the exact title/artist, then cleaned variants,
+// then a general free-text query — so decorated titles ("… (feat. X)") still hit.
+// Prefers a result that carries synced lyrics.
 export async function getLyrics(song) {
   if (!song) return NONE;
   const artist = (song.artist || '').trim();
@@ -44,15 +76,26 @@ export async function getLyrics(song) {
   const key = (song.id || `${title}|${artist}`).toLowerCase();
   if (_cache[key]) return _cache[key];
 
+  const cTitle = cleanTitle(title) || title;
+  const cArtist = cleanArtist(artist) || artist;
+
+  // Ordered attempts — first one that returns hits wins. De-duped.
+  const attempts = [];
+  const push = (p) => { const s = JSON.stringify(p); if (!attempts.some(a => JSON.stringify(a) === s)) attempts.push(p); };
+  push({ track_name: title, artist_name: artist });
+  push({ track_name: cTitle, artist_name: cArtist });
+  push({ q: `${cTitle} ${cArtist}`.trim() });
+  push({ track_name: cTitle });
+  push({ q: cTitle });
+
   try {
-    const qs = new URLSearchParams({ track_name: title, artist_name: artist }).toString();
-    const res = await fetch(`${API}/search?${qs}`, { headers: { 'Lrclib-Client': 'Sonara' } });
-    if (!res.ok) return NONE;
-    const arr = await res.json();
-    if (!Array.isArray(arr) || !arr.length) {
-      _cache[key] = NONE;
-      return NONE;
+    let arr = [];
+    for (const p of attempts) {
+      arr = await lrcSearch(p);
+      if (arr.length) break;
     }
+    if (!arr.length) { _cache[key] = NONE; return NONE; }
+
     // Prefer synced lyrics, then any plain lyrics, then the first hit.
     const best = arr.find(x => x.syncedLyrics) || arr.find(x => x.plainLyrics) || arr[0];
     const synced = parseLrc(best?.syncedLyrics);

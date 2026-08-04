@@ -1428,6 +1428,10 @@ export default function PlayerScreen({ navigation, route }) {
                 onToggle={() => toggleFollowArtist({ id: artistIdOf(name), name, genre: displaySong.genre || artistInfo.genre, emoji: '🎤' })}
               />
             ))}
+            <View style={[styles.creditRow, { borderBottomWidth: 0 }]}>
+              <Text style={styles.creditKey}>Genre</Text>
+              <Text style={styles.creditVal}>{displaySong.genre || artistInfo.genre || 'Music'}</Text>
+            </View>
           </View>
 
           {/* Explore — more songs by the current artist, side-by-side big covers */}
