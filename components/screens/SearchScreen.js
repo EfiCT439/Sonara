@@ -206,6 +206,27 @@ function GenreCard({ styles, genre, color, icon, song, onPress }) {
   );
 }
 
+// ── GenreSongCard (module scope) ─────────────────────────────────────────────
+// Big square cover card used inside a genre page (same look as the Player's
+// Explore cards). Shows real artwork via useArtwork, falls back to the emoji.
+function GenreSongCard({ styles, c, item, color, onPress }) {
+  const art = useArtwork(item);
+  return (
+    <TouchableOpacity style={styles.gCard} onPress={onPress} activeOpacity={0.85}>
+      <View style={[styles.gCardArt, { backgroundColor: color + '22' }]}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.gCardArtImg} resizeMode="cover" />
+          : <Text style={styles.gCardEmoji}>{item.emoji || '🎵'}</Text>}
+        <View style={[styles.gCardPlay, { backgroundColor: color }]}>
+          <Ionicons name="play" size={14} color={c.icon} />
+        </View>
+      </View>
+      <Text style={styles.gCardTitle} numberOfLines={1}>{item.title}</Text>
+      <Text style={styles.gCardArtist} numberOfLines={1}>{item.artist}</Text>
+    </TouchableOpacity>
+  );
+}
+
 // ── SongRow (module scope) ───────────────────────────────────────────────────
 function SongRow({ styles, c, item, index, onPress, accentColor }) {
   const art = useArtwork(item);
@@ -515,14 +536,14 @@ export default function SearchScreen({ navigation }) {
           <View style={{ width: 40 }} />
         </View>
         <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-          <View style={styles.genreSongList}>
+          <Text style={[styles.gSectionTitle, { color }]}>Popular in {selectedGenre}</Text>
+          <View style={styles.gGrid}>
             {songs.map((item, index) => (
-              <SongRow styles={styles} c={c}
+              <GenreSongCard styles={styles} c={c}
                 key={item.id}
                 item={item}
-                index={index}
-                onPress={(s, i) => openSong(s, songs, i)}
-                accentColor={color}
+                color={color}
+                onPress={() => openSong(item, songs, index)}
               />
             ))}
           </View>
@@ -936,6 +957,16 @@ const makeStyles = (c) => StyleSheet.create({
   },
   genreHeaderTitle: { fontSize: 20, fontWeight: '900' },
   genreSongList: { paddingHorizontal: 20, marginTop: 8 },
+  // Genre page — big square cover cards in a 2-col grid (like the Player's Explore)
+  gSectionTitle: { fontSize: 18, fontWeight: '900', paddingHorizontal: 20, marginTop: 10, marginBottom: 14 },
+  gGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, justifyContent: 'space-between' },
+  gCard: { width: '47%', marginBottom: 20 },
+  gCardArt: { width: '100%', aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 8 },
+  gCardArtImg: { width: '100%', height: '100%' },
+  gCardEmoji: { fontSize: 54 },
+  gCardPlay: { position: 'absolute', bottom: 8, right: 8, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  gCardTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
+  gCardArtist: { color: c.textFaint, fontSize: 12, marginTop: 2 },
 
   // Recognition modal
   recognitionOverlay: {
