@@ -85,6 +85,7 @@ export function UserProvider({ children }) {
   ]);
   const [listeningHabits, setListeningHabits] = useState({ genres: {}, artists: {}, songs: {} });
   const [excludedFromTaste, setExcludedFromTaste] = useState([]); // song ids the user excluded from recommendations
+  const [showFloatingLyrics, setShowFloatingLyrics] = useState(false); // Player: single synced lyric under the art (persists across songs)
 
   // Privacy: when on, played songs are NOT recorded to history or habits.
   const [privateSession, setPrivateSession] = useState(false);
@@ -677,6 +678,7 @@ export function UserProvider({ children }) {
       listeningHabits, trackSongPlay, getTopGenres, getTopArtists,
       privateSession, setPrivateSession, clearListeningHistory,
       excludeFromTaste, isExcludedFromTaste,
+      showFloatingLyrics, setShowFloatingLyrics,
       themeKey, setThemeKey, toggleTheme, colors, isDark,
       syncPremiumFromBackend,
       // Global player

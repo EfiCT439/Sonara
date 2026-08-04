@@ -221,6 +221,7 @@ export default function PlayerScreen({ navigation, route }) {
     downloadSong, isDownloaded, colors: c,
     excludeFromTaste, isExcludedFromTaste,
     toggleFollowArtist, isFollowingArtist,
+    showFloatingLyrics, setShowFloatingLyrics,
   } = useUser();
   const styles = makeStyles(c);
 
@@ -253,7 +254,6 @@ export default function PlayerScreen({ navigation, route }) {
   const [showPlayerMenu, setShowPlayerMenu] = useState(false); // audio player "⋯" menu: Share · Add to playlist · Download · Queue
   const [showAboutArtist, setShowAboutArtist] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
-  const [showFloatingLyrics, setShowFloatingLyrics] = useState(false); // single synced line under the art
   const [radioLoading, setRadioLoading] = useState(false);
   const [showRepeatOptions, setShowRepeatOptions] = useState(false);
   const [showQualityOptions, setShowQualityOptions] = useState(false);
@@ -1227,7 +1227,7 @@ export default function PlayerScreen({ navigation, route }) {
               {showFloatingLyrics && (
                 <View style={styles.floatingLyricWrap}>
                   {currentLyricText ? (
-                    <Animated.Text style={[styles.floatingLyricText, { color: bgColor, opacity: floatingLyricAnim }]} numberOfLines={2}>
+                    <Animated.Text style={[styles.floatingLyricText, { opacity: floatingLyricAnim }]} numberOfLines={2}>
                       {currentLyricText}
                     </Animated.Text>
                   ) : (
@@ -2342,7 +2342,7 @@ const makeStyles = (c) => StyleSheet.create({
   menuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 12 },
   // Floating single-line synced lyric under the album art
   floatingLyricWrap: { minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30, marginTop: -8, marginBottom: 18 },
-  floatingLyricText: { fontSize: 18, fontWeight: '800', textAlign: 'center', lineHeight: 24 },
+  floatingLyricText: { color: '#fff', fontSize: 18, fontWeight: '800', textAlign: 'center', lineHeight: 24 },
   floatingLyricHint: { fontSize: 14, fontWeight: '600', textAlign: 'center', color: 'rgba(255,255,255,0.4)' },
   // Song credits
   creditRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)', gap: 16 },
