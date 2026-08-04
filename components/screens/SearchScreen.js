@@ -8,7 +8,7 @@ import { Audio } from 'expo-av';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
 import { searchAudius } from '../../services/audius';
-import { useArtwork, useTrendingSongs, useArtistImage, useArtistTopSongs } from '../../services/artwork';
+import { useArtwork, useTrendingSongs, useArtistImage } from '../../services/artwork';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_W = Math.floor(SCREEN_W * 0.38);
@@ -31,36 +31,48 @@ const GENRE_ICONS = {
   Classic: 'library', Instrumental: 'musical-note',
 };
 
-const AU = n => `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${n}.mp3`;
+const AU = n => `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${((n - 1) % 5) + 1}.mp3`;
 
 const GENRE_SONGS = {
   Afrobeats: [
-    { id: 'a1', title: 'Last Last',   artist: 'Burna Boy',  genre: 'Afrobeats', emoji: '🎵', audioUrl: AU(1) },
-    { id: 'a2', title: 'Essence',     artist: 'Wizkid',     genre: 'Afrobeats', emoji: '🎶', audioUrl: AU(2) },
-    { id: 'a3', title: 'Fall',        artist: 'Davido',     genre: 'Afrobeats', emoji: '🎸', audioUrl: AU(3) },
-    { id: 'a4', title: 'Calm Down',   artist: 'Rema',       genre: 'Afrobeats', emoji: '🎹', audioUrl: AU(4) },
-    { id: 'a5', title: 'Sability',    artist: 'Asake',      genre: 'Afrobeats', emoji: '🎺', audioUrl: AU(5) },
+    { id: 'a1', title: 'Last Last',   artist: 'Burna Boy',     genre: 'Afrobeats', emoji: '🎵', audioUrl: AU(1) },
+    { id: 'a2', title: 'Essence',     artist: 'Wizkid',        genre: 'Afrobeats', emoji: '🎶', audioUrl: AU(2) },
+    { id: 'a3', title: 'Fall',        artist: 'Davido',        genre: 'Afrobeats', emoji: '🎸', audioUrl: AU(3) },
+    { id: 'a4', title: 'Calm Down',   artist: 'Rema',          genre: 'Afrobeats', emoji: '🎹', audioUrl: AU(4) },
+    { id: 'a5', title: 'Sability',    artist: 'Asake',         genre: 'Afrobeats', emoji: '🎺', audioUrl: AU(5) },
+    { id: 'a6', title: 'Free Mind',   artist: 'Tems',          genre: 'Afrobeats', emoji: '🎵', audioUrl: AU(6) },
+    { id: 'a7', title: 'Rush',        artist: 'Ayra Starr',    genre: 'Afrobeats', emoji: '🎶', audioUrl: AU(7) },
+    { id: 'a8', title: 'Peru',        artist: 'Fireboy DML',   genre: 'Afrobeats', emoji: '🎸', audioUrl: AU(8) },
   ],
   'Hip Hop': [
-    { id: 'h1', title: "God's Plan",    artist: 'Drake',          genre: 'Hip Hop', emoji: '🎵', audioUrl: AU(1) },
-    { id: 'h2', title: 'Sicko Mode',    artist: 'Travis Scott',   genre: 'Hip Hop', emoji: '🎶', audioUrl: AU(2) },
-    { id: 'h3', title: 'HUMBLE',        artist: 'Kendrick Lamar', genre: 'Hip Hop', emoji: '🎸', audioUrl: AU(3) },
-    { id: 'h4', title: 'Rockstar',      artist: 'Post Malone',    genre: 'Hip Hop', emoji: '🎹', audioUrl: AU(4) },
-    { id: 'h5', title: 'Nice For What', artist: 'Drake',          genre: 'Hip Hop', emoji: '🎺', audioUrl: AU(5) },
+    { id: 'h1', title: "God's Plan",       artist: 'Drake',          genre: 'Hip Hop', emoji: '🎵', audioUrl: AU(1) },
+    { id: 'h2', title: 'Sicko Mode',       artist: 'Travis Scott',   genre: 'Hip Hop', emoji: '🎶', audioUrl: AU(2) },
+    { id: 'h3', title: 'HUMBLE',           artist: 'Kendrick Lamar', genre: 'Hip Hop', emoji: '🎸', audioUrl: AU(3) },
+    { id: 'h4', title: 'Rockstar',         artist: 'Post Malone',    genre: 'Hip Hop', emoji: '🎹', audioUrl: AU(4) },
+    { id: 'h5', title: 'No Role Modelz',   artist: 'J. Cole',        genre: 'Hip Hop', emoji: '🎺', audioUrl: AU(5) },
+    { id: 'h6', title: 'Life Is Good',     artist: 'Future',         genre: 'Hip Hop', emoji: '🎵', audioUrl: AU(6) },
+    { id: 'h7', title: 'Stronger',         artist: 'Kanye West',     genre: 'Hip Hop', emoji: '🎶', audioUrl: AU(7) },
+    { id: 'h8', title: 'N.Y. State of Mind', artist: 'Nas',          genre: 'Hip Hop', emoji: '🎸', audioUrl: AU(8) },
   ],
   Rap: [
     { id: 'ra1', title: 'SICKO MODE',      artist: 'Travis Scott',   genre: 'Rap', emoji: '🎤', audioUrl: AU(1) },
-    { id: 'ra2', title: 'Goosebumps',      artist: 'Travis Scott',   genre: 'Rap', emoji: '🎵', audioUrl: AU(2) },
+    { id: 'ra2', title: 'Lose Yourself',   artist: 'Eminem',         genre: 'Rap', emoji: '🎵', audioUrl: AU(2) },
     { id: 'ra3', title: 'DNA',             artist: 'Kendrick Lamar', genre: 'Rap', emoji: '🎶', audioUrl: AU(3) },
     { id: 'ra4', title: 'Lucid Dreams',    artist: 'Juice WRLD',     genre: 'Rap', emoji: '🎸', audioUrl: AU(4) },
     { id: 'ra5', title: 'Congratulations', artist: 'Post Malone',    genre: 'Rap', emoji: '🎹', audioUrl: AU(5) },
+    { id: 'ra6', title: 'Lollipop',        artist: 'Lil Wayne',      genre: 'Rap', emoji: '🎤', audioUrl: AU(6) },
+    { id: 'ra7', title: 'a lot',           artist: '21 Savage',      genre: 'Rap', emoji: '🎵', audioUrl: AU(7) },
+    { id: 'ra8', title: 'Super Bass',      artist: 'Nicki Minaj',    genre: 'Rap', emoji: '🎶', audioUrl: AU(8) },
   ],
   Amapiano: [
-    { id: 'am1', title: 'Adiwele',         artist: 'Kabza De Small', genre: 'Amapiano', emoji: '🎵', audioUrl: AU(1) },
-    { id: 'am2', title: 'Lengoma',         artist: 'DJ Maphorisa',   genre: 'Amapiano', emoji: '🎶', audioUrl: AU(2) },
-    { id: 'am3', title: 'Umsebenzi Wethu', artist: 'Kabza De Small', genre: 'Amapiano', emoji: '🎸', audioUrl: AU(3) },
-    { id: 'am4', title: 'Nkulunkulu',      artist: 'DJ Maphorisa',   genre: 'Amapiano', emoji: '🎹', audioUrl: AU(4) },
-    { id: 'am5', title: 'Izolo',           artist: 'Kabza De Small', genre: 'Amapiano', emoji: '🎺', audioUrl: AU(5) },
+    { id: 'am1', title: 'Adiwele',       artist: 'Kabza De Small', genre: 'Amapiano', emoji: '🎵', audioUrl: AU(1) },
+    { id: 'am2', title: 'Ke Star',       artist: 'Focalistic',     genre: 'Amapiano', emoji: '🎶', audioUrl: AU(2) },
+    { id: 'am3', title: 'Mnike',         artist: 'Tyler ICU',      genre: 'Amapiano', emoji: '🎸', audioUrl: AU(3) },
+    { id: 'am4', title: 'Tanzania',      artist: 'Uncle Waffles',  genre: 'Amapiano', emoji: '🎹', audioUrl: AU(4) },
+    { id: 'am5', title: 'Selema',        artist: 'Musa Keys',      genre: 'Amapiano', emoji: '🎺', audioUrl: AU(5) },
+    { id: 'am6', title: 'Abo Mvelo',     artist: 'Daliwonga',      genre: 'Amapiano', emoji: '🎵', audioUrl: AU(6) },
+    { id: 'am7', title: 'Ntwana Yam',    artist: 'Young Stunna',   genre: 'Amapiano', emoji: '🎶', audioUrl: AU(7) },
+    { id: 'am8', title: 'Lengoma',       artist: 'DJ Maphorisa',   genre: 'Amapiano', emoji: '🎸', audioUrl: AU(8) },
   ],
   Pop: [
     { id: 'p1', title: 'Anti-Hero',       artist: 'Taylor Swift',  genre: 'Pop', emoji: '🎵', audioUrl: AU(1) },
@@ -68,48 +80,69 @@ const GENRE_SONGS = {
     { id: 'p3', title: 'As It Was',       artist: 'Harry Styles',  genre: 'Pop', emoji: '🎸', audioUrl: AU(3) },
     { id: 'p4', title: 'Blinding Lights', artist: 'The Weeknd',    genre: 'Pop', emoji: '🎹', audioUrl: AU(4) },
     { id: 'p5', title: 'Stay',            artist: 'Justin Bieber', genre: 'Pop', emoji: '🎺', audioUrl: AU(5) },
+    { id: 'p6', title: 'Levitating',      artist: 'Dua Lipa',      genre: 'Pop', emoji: '🎵', audioUrl: AU(6) },
+    { id: 'p7', title: '7 rings',         artist: 'Ariana Grande', genre: 'Pop', emoji: '🎶', audioUrl: AU(7) },
+    { id: 'p8', title: 'bad guy',         artist: 'Billie Eilish', genre: 'Pop', emoji: '🎸', audioUrl: AU(8) },
   ],
   Gospel: [
-    { id: 'g1', title: 'Way Maker',           artist: 'Sinach',            genre: 'Gospel', emoji: '🙏', audioUrl: AU(1) },
-    { id: 'g2', title: 'Oceans',              artist: 'Hillsong',          genre: 'Gospel', emoji: '🕊️', audioUrl: AU(2) },
-    { id: 'g3', title: 'Goodness of God',     artist: 'Bethel Music',      genre: 'Gospel', emoji: '🙌', audioUrl: AU(3) },
-    { id: 'g4', title: 'Jireh',               artist: 'Elevation Worship', genre: 'Gospel', emoji: '⭐', audioUrl: AU(4) },
-    { id: 'g5', title: 'What a Beautiful Name', artist: 'Hillsong',        genre: 'Gospel', emoji: '✝️', audioUrl: AU(5) },
+    { id: 'g1', title: 'Way Maker',       artist: 'Sinach',            genre: 'Gospel', emoji: '🙏', audioUrl: AU(1) },
+    { id: 'g2', title: 'Oceans',          artist: 'Hillsong',          genre: 'Gospel', emoji: '🕊️', audioUrl: AU(2) },
+    { id: 'g3', title: 'Goodness of God', artist: 'Bethel Music',      genre: 'Gospel', emoji: '🙌', audioUrl: AU(3) },
+    { id: 'g4', title: 'Jireh',           artist: 'Elevation Worship', genre: 'Gospel', emoji: '⭐', audioUrl: AU(4) },
+    { id: 'g5', title: 'Believe For It',  artist: 'CeCe Winans',       genre: 'Gospel', emoji: '✝️', audioUrl: AU(5) },
+    { id: 'g6', title: 'Love Theory',     artist: 'Kirk Franklin',     genre: 'Gospel', emoji: '🙏', audioUrl: AU(6) },
+    { id: 'g7', title: 'Break Every Chain', artist: 'Tasha Cobbs',     genre: 'Gospel', emoji: '🕊️', audioUrl: AU(7) },
+    { id: 'g8', title: 'Intentional',     artist: 'Travis Greene',     genre: 'Gospel', emoji: '🙌', audioUrl: AU(8) },
   ],
   Praise: [
-    { id: 'pr1', title: 'This is a Move', artist: 'Brandon Lake',      genre: 'Praise', emoji: '🙌', audioUrl: AU(1) },
-    { id: 'pr2', title: 'Champion',       artist: 'Bethel Music',      genre: 'Praise', emoji: '👑', audioUrl: AU(2) },
-    { id: 'pr3', title: 'Praise',         artist: 'Elevation Worship', genre: 'Praise', emoji: '🙏', audioUrl: AU(3) },
-    { id: 'pr4', title: 'Build My Life',  artist: 'Pat Barrett',       genre: 'Praise', emoji: '✝️', audioUrl: AU(4) },
-    { id: 'pr5', title: 'King of Kings',  artist: 'Hillsong',          genre: 'Praise', emoji: '👑', audioUrl: AU(5) },
+    { id: 'pr1', title: 'This is a Move',       artist: 'Brandon Lake',      genre: 'Praise', emoji: '🙌', audioUrl: AU(1) },
+    { id: 'pr2', title: 'Champion',             artist: 'Bethel Music',      genre: 'Praise', emoji: '👑', audioUrl: AU(2) },
+    { id: 'pr3', title: 'Praise',               artist: 'Elevation Worship', genre: 'Praise', emoji: '🙏', audioUrl: AU(3) },
+    { id: 'pr4', title: 'Build My Life',        artist: 'Pat Barrett',       genre: 'Praise', emoji: '✝️', audioUrl: AU(4) },
+    { id: 'pr5', title: 'This Is Amazing Grace', artist: 'Phil Wickham',     genre: 'Praise', emoji: '👑', audioUrl: AU(5) },
+    { id: 'pr6', title: 'How Great Is Our God', artist: 'Chris Tomlin',      genre: 'Praise', emoji: '🙌', audioUrl: AU(6) },
+    { id: 'pr7', title: 'Promises',             artist: 'Maverick City',     genre: 'Praise', emoji: '🙏', audioUrl: AU(7) },
+    { id: 'pr8', title: 'What a Beautiful Name', artist: 'Hillsong',         genre: 'Praise', emoji: '✝️', audioUrl: AU(8) },
   ],
   Worship: [
     { id: 'w1', title: 'What a Beautiful Name', artist: 'Hillsong',          genre: 'Worship', emoji: '🕊️', audioUrl: AU(1) },
-    { id: 'w2', title: 'Reckless Love',          artist: 'Cory Asbury',       genre: 'Worship', emoji: '❤️', audioUrl: AU(2) },
-    { id: 'w3', title: 'Graves into Gardens',    artist: 'Elevation Worship', genre: 'Worship', emoji: '🌿', audioUrl: AU(3) },
-    { id: 'w4', title: 'Holy Forever',           artist: 'Chris Tomlin',      genre: 'Worship', emoji: '⭐', audioUrl: AU(4) },
-    { id: 'w5', title: 'Gratitude',              artist: 'Brandon Lake',      genre: 'Worship', emoji: '🙏', audioUrl: AU(5) },
+    { id: 'w2', title: 'Reckless Love',         artist: 'Cory Asbury',       genre: 'Worship', emoji: '❤️', audioUrl: AU(2) },
+    { id: 'w3', title: 'Graves into Gardens',   artist: 'Elevation Worship', genre: 'Worship', emoji: '🌿', audioUrl: AU(3) },
+    { id: 'w4', title: 'Holy Forever',          artist: 'Chris Tomlin',      genre: 'Worship', emoji: '⭐', audioUrl: AU(4) },
+    { id: 'w5', title: 'The Blessing',          artist: 'Kari Jobe',         genre: 'Worship', emoji: '🙏', audioUrl: AU(5) },
+    { id: 'w6', title: 'You Say',               artist: 'Lauren Daigle',     genre: 'Worship', emoji: '🕊️', audioUrl: AU(6) },
+    { id: 'w7', title: 'Gratitude',             artist: 'Brandon Lake',      genre: 'Worship', emoji: '🙌', audioUrl: AU(7) },
+    { id: 'w8', title: 'Goodness of God',       artist: 'Bethel Music',      genre: 'Worship', emoji: '❤️', audioUrl: AU(8) },
   ],
   Rock: [
-    { id: 'rk1', title: 'Bohemian Rhapsody',  artist: 'Queen',         genre: 'Rock', emoji: '🎸', audioUrl: AU(1) },
-    { id: 'rk2', title: 'Hotel California',   artist: 'Eagles',        genre: 'Rock', emoji: '🎵', audioUrl: AU(2) },
-    { id: 'rk3', title: 'Sweet Child O Mine', artist: "Guns N' Roses", genre: 'Rock', emoji: '⚡', audioUrl: AU(3) },
-    { id: 'rk4', title: 'Back in Black',      artist: 'AC/DC',         genre: 'Rock', emoji: '🎶', audioUrl: AU(4) },
-    { id: 'rk5', title: 'Stairway to Heaven', artist: 'Led Zeppelin',  genre: 'Rock', emoji: '🎸', audioUrl: AU(5) },
+    { id: 'rk1', title: 'Bohemian Rhapsody',    artist: 'Queen',              genre: 'Rock', emoji: '🎸', audioUrl: AU(1) },
+    { id: 'rk2', title: 'Hotel California',     artist: 'Eagles',             genre: 'Rock', emoji: '🎵', audioUrl: AU(2) },
+    { id: 'rk3', title: 'Sweet Child O Mine',   artist: "Guns N' Roses",      genre: 'Rock', emoji: '⚡', audioUrl: AU(3) },
+    { id: 'rk4', title: 'Back in Black',        artist: 'AC/DC',              genre: 'Rock', emoji: '🎶', audioUrl: AU(4) },
+    { id: 'rk5', title: 'Stairway to Heaven',   artist: 'Led Zeppelin',       genre: 'Rock', emoji: '🎸', audioUrl: AU(5) },
+    { id: 'rk6', title: 'Smells Like Teen Spirit', artist: 'Nirvana',         genre: 'Rock', emoji: '🎵', audioUrl: AU(6) },
+    { id: 'rk7', title: 'Enter Sandman',        artist: 'Metallica',          genre: 'Rock', emoji: '⚡', audioUrl: AU(7) },
+    { id: 'rk8', title: 'Paint It Black',       artist: 'The Rolling Stones', genre: 'Rock', emoji: '🎶', audioUrl: AU(8) },
   ],
   Reggae: [
-    { id: 're1', title: 'No Woman No Cry',    artist: 'Bob Marley', genre: 'Reggae', emoji: '🌿', audioUrl: AU(1) },
-    { id: 're2', title: 'One Love',           artist: 'Bob Marley', genre: 'Reggae', emoji: '☮️', audioUrl: AU(2) },
-    { id: 're3', title: 'Redemption Song',    artist: 'Bob Marley', genre: 'Reggae', emoji: '🎵', audioUrl: AU(3) },
-    { id: 're4', title: 'Three Little Birds', artist: 'Bob Marley', genre: 'Reggae', emoji: '🐦', audioUrl: AU(4) },
-    { id: 're5', title: 'Is This Love',       artist: 'Bob Marley', genre: 'Reggae', emoji: '❤️', audioUrl: AU(5) },
+    { id: 're1', title: 'No Woman No Cry',     artist: 'Bob Marley',           genre: 'Reggae', emoji: '🌿', audioUrl: AU(1) },
+    { id: 're2', title: 'Legalize It',         artist: 'Peter Tosh',           genre: 'Reggae', emoji: '☮️', audioUrl: AU(2) },
+    { id: 're3', title: 'Many Rivers to Cross', artist: 'Jimmy Cliff',         genre: 'Reggae', emoji: '🎵', audioUrl: AU(3) },
+    { id: 're4', title: 'Pressure Drop',       artist: 'Toots and the Maytals', genre: 'Reggae', emoji: '🐦', audioUrl: AU(4) },
+    { id: 're5', title: 'Marcus Garvey',       artist: 'Burning Spear',        genre: 'Reggae', emoji: '❤️', audioUrl: AU(5) },
+    { id: 're6', title: 'Welcome to Jamrock',  artist: 'Damian Marley',        genre: 'Reggae', emoji: '🌿', audioUrl: AU(6) },
+    { id: 're7', title: 'Here Comes Trouble',  artist: 'Chronixx',             genre: 'Reggae', emoji: '☮️', audioUrl: AU(7) },
+    { id: 're8', title: 'Night Nurse',         artist: 'Gregory Isaacs',       genre: 'Reggae', emoji: '🎵', audioUrl: AU(8) },
   ],
   Radio: [
     { id: 'rad1', title: 'Flowers',          artist: 'Miley Cyrus',    genre: 'Radio', emoji: '🌸', audioUrl: AU(1) },
     { id: 'rad2', title: 'Levitating',       artist: 'Dua Lipa',       genre: 'Radio', emoji: '🎵', audioUrl: AU(2) },
     { id: 'rad3', title: 'Watermelon Sugar', artist: 'Harry Styles',   genre: 'Radio', emoji: '🍉', audioUrl: AU(3) },
-    { id: 'rad4', title: 'drivers license',  artist: 'Olivia Rodrigo', genre: 'Radio', emoji: '🎶', audioUrl: AU(4) },
+    { id: 'rad4', title: 'vampire',          artist: 'Olivia Rodrigo', genre: 'Radio', emoji: '🎶', audioUrl: AU(4) },
     { id: 'rad5', title: 'Peaches',          artist: 'Justin Bieber',  genre: 'Radio', emoji: '🍑', audioUrl: AU(5) },
+    { id: 'rad6', title: 'Blinding Lights',  artist: 'The Weeknd',     genre: 'Radio', emoji: '🎵', audioUrl: AU(6) },
+    { id: 'rad7', title: 'Kill Bill',        artist: 'SZA',            genre: 'Radio', emoji: '🎶', audioUrl: AU(7) },
+    { id: 'rad8', title: 'Paint The Town Red', artist: 'Doja Cat',     genre: 'Radio', emoji: '🍉', audioUrl: AU(8) },
   ],
   Country: [
     { id: 'co1', title: 'Jolene',            artist: 'Dolly Parton',    genre: 'Country', emoji: '🤠', audioUrl: AU(1) },
@@ -117,13 +150,19 @@ const GENRE_SONGS = {
     { id: 'co3', title: 'Tennessee Whiskey', artist: 'Chris Stapleton', genre: 'Country', emoji: '🥃', audioUrl: AU(3) },
     { id: 'co4', title: 'Ring of Fire',      artist: 'Johnny Cash',     genre: 'Country', emoji: '🔥', audioUrl: AU(4) },
     { id: 'co5', title: 'Wagon Wheel',       artist: 'Darius Rucker',   genre: 'Country', emoji: '🎵', audioUrl: AU(5) },
+    { id: 'co6', title: 'Fast Car',          artist: 'Luke Combs',      genre: 'Country', emoji: '🚗', audioUrl: AU(6) },
+    { id: 'co7', title: 'Last Night',        artist: 'Morgan Wallen',   genre: 'Country', emoji: '🌄', audioUrl: AU(7) },
+    { id: 'co8', title: 'Rainbow',           artist: 'Kacey Musgraves', genre: 'Country', emoji: '🌈', audioUrl: AU(8) },
   ],
   Decades: [
-    { id: 'dec1', title: 'Billie Jean',                 artist: 'Michael Jackson', genre: 'Decades', emoji: '👑', audioUrl: AU(1) },
-    { id: 'dec2', title: 'Like a Prayer',               artist: 'Madonna',         genre: 'Decades', emoji: '🎵', audioUrl: AU(2) },
-    { id: 'dec3', title: 'Sweet Dreams',                artist: 'Eurythmics',      genre: 'Decades', emoji: '💭', audioUrl: AU(3) },
-    { id: 'dec4', title: 'Girls Just Want to Have Fun', artist: 'Cyndi Lauper',    genre: 'Decades', emoji: '🎶', audioUrl: AU(4) },
-    { id: 'dec5', title: 'Africa',                      artist: 'Toto',            genre: 'Decades', emoji: '🌍', audioUrl: AU(5) },
+    { id: 'dec1', title: 'Billie Jean',   artist: 'Michael Jackson', genre: 'Decades', emoji: '👑', audioUrl: AU(1) },
+    { id: 'dec2', title: 'Like a Prayer', artist: 'Madonna',         genre: 'Decades', emoji: '🎵', audioUrl: AU(2) },
+    { id: 'dec3', title: 'Sweet Dreams',  artist: 'Eurythmics',      genre: 'Decades', emoji: '💭', audioUrl: AU(3) },
+    { id: 'dec4', title: 'Africa',        artist: 'Toto',            genre: 'Decades', emoji: '🌍', audioUrl: AU(4) },
+    { id: 'dec5', title: 'I Wanna Dance with Somebody', artist: 'Whitney Houston', genre: 'Decades', emoji: '💃', audioUrl: AU(5) },
+    { id: 'dec6', title: 'Purple Rain',   artist: 'Prince',          genre: 'Decades', emoji: '🌧️', audioUrl: AU(6) },
+    { id: 'dec7', title: 'Careless Whisper', artist: 'George Michael', genre: 'Decades', emoji: '🎷', audioUrl: AU(7) },
+    { id: 'dec8', title: 'Take On Me',    artist: 'a-ha',            genre: 'Decades', emoji: '🎶', audioUrl: AU(8) },
   ],
   Jazz: [
     { id: 'jz1', title: 'Take Five',              artist: 'Dave Brubeck',    genre: 'Jazz', emoji: '🎷', audioUrl: AU(1) },
@@ -131,20 +170,29 @@ const GENRE_SONGS = {
     { id: 'jz3', title: 'Autumn Leaves',          artist: 'Bill Evans',      genre: 'Jazz', emoji: '🍂', audioUrl: AU(3) },
     { id: 'jz4', title: 'Fly Me to the Moon',     artist: 'Frank Sinatra',   genre: 'Jazz', emoji: '🌙', audioUrl: AU(4) },
     { id: 'jz5', title: 'What a Wonderful World', artist: 'Louis Armstrong', genre: 'Jazz', emoji: '🌍', audioUrl: AU(5) },
+    { id: 'jz6', title: 'Naima',                  artist: 'John Coltrane',   genre: 'Jazz', emoji: '🎷', audioUrl: AU(6) },
+    { id: 'jz7', title: 'Summertime',             artist: 'Ella Fitzgerald', genre: 'Jazz', emoji: '🎶', audioUrl: AU(7) },
+    { id: 'jz8', title: 'Feeling Good',           artist: 'Nina Simone',     genre: 'Jazz', emoji: '🌙', audioUrl: AU(8) },
   ],
   Classic: [
-    { id: 'cl1', title: 'Symphony No. 5',   artist: 'Beethoven',   genre: 'Classic', emoji: '🎻', audioUrl: AU(1) },
-    { id: 'cl2', title: 'Four Seasons',     artist: 'Vivaldi',     genre: 'Classic', emoji: '🌿', audioUrl: AU(2) },
-    { id: 'cl3', title: 'Moonlight Sonata', artist: 'Beethoven',   genre: 'Classic', emoji: '🌙', audioUrl: AU(3) },
-    { id: 'cl4', title: 'Canon in D',       artist: 'Pachelbel',   genre: 'Classic', emoji: '🎶', audioUrl: AU(4) },
-    { id: 'cl5', title: 'Swan Lake',        artist: 'Tchaikovsky', genre: 'Classic', emoji: '🦢', audioUrl: AU(5) },
+    { id: 'cl1', title: 'Symphony No. 5',        artist: 'Beethoven',   genre: 'Classic', emoji: '🎻', audioUrl: AU(1) },
+    { id: 'cl2', title: 'Four Seasons',          artist: 'Vivaldi',     genre: 'Classic', emoji: '🌿', audioUrl: AU(2) },
+    { id: 'cl3', title: 'Eine kleine Nachtmusik', artist: 'Mozart',     genre: 'Classic', emoji: '🎼', audioUrl: AU(3) },
+    { id: 'cl4', title: 'Canon in D',            artist: 'Pachelbel',   genre: 'Classic', emoji: '🎶', audioUrl: AU(4) },
+    { id: 'cl5', title: 'Swan Lake',             artist: 'Tchaikovsky', genre: 'Classic', emoji: '🦢', audioUrl: AU(5) },
+    { id: 'cl6', title: 'Air on the G String',   artist: 'Bach',        genre: 'Classic', emoji: '🎻', audioUrl: AU(6) },
+    { id: 'cl7', title: 'Nocturne op.9 No.2',    artist: 'Chopin',      genre: 'Classic', emoji: '🌙', audioUrl: AU(7) },
+    { id: 'cl8', title: 'Clair de Lune',         artist: 'Debussy',     genre: 'Classic', emoji: '🎼', audioUrl: AU(8) },
   ],
   Instrumental: [
-    { id: 'in1', title: 'Clair de Lune',      artist: 'Debussy',      genre: 'Instrumental', emoji: '🌙', audioUrl: AU(1) },
-    { id: 'in2', title: 'River Flows in You', artist: 'Yiruma',       genre: 'Instrumental', emoji: '🌊', audioUrl: AU(2) },
-    { id: 'in3', title: 'Experience',         artist: 'Einaudi',      genre: 'Instrumental', emoji: '🎵', audioUrl: AU(3) },
-    { id: 'in4', title: 'Nuvole Bianche',     artist: 'Einaudi',      genre: 'Instrumental', emoji: '☁️', audioUrl: AU(4) },
-    { id: 'in5', title: 'Comptine',           artist: 'Yann Tiersen', genre: 'Instrumental', emoji: '🎶', audioUrl: AU(5) },
+    { id: 'in1', title: 'River Flows in You',      artist: 'Yiruma',        genre: 'Instrumental', emoji: '🌊', audioUrl: AU(1) },
+    { id: 'in2', title: 'Nuvole Bianche',          artist: 'Ludovico Einaudi', genre: 'Instrumental', emoji: '☁️', audioUrl: AU(2) },
+    { id: 'in3', title: 'Comptine',                artist: 'Yann Tiersen',  genre: 'Instrumental', emoji: '🎵', audioUrl: AU(3) },
+    { id: 'in4', title: 'On the Nature of Daylight', artist: 'Max Richter', genre: 'Instrumental', emoji: '🌅', audioUrl: AU(4) },
+    { id: 'in5', title: 'Time',                    artist: 'Hans Zimmer',   genre: 'Instrumental', emoji: '⏳', audioUrl: AU(5) },
+    { id: 'in6', title: 'Near Light',              artist: 'Ólafur Arnalds', genre: 'Instrumental', emoji: '💡', audioUrl: AU(6) },
+    { id: 'in7', title: 'Says',                    artist: 'Nils Frahm',    genre: 'Instrumental', emoji: '🎹', audioUrl: AU(7) },
+    { id: 'in8', title: 'Experience',              artist: 'Ludovico Einaudi', genre: 'Instrumental', emoji: '🎶', audioUrl: AU(8) },
   ],
 };
 
@@ -206,90 +254,64 @@ function GenreCard({ styles, genre, color, icon, song, onPress }) {
   );
 }
 
-// ── GenreSongCard (module scope) ─────────────────────────────────────────────
-// Big square cover card used inside a genre page (same look as the Player's
-// Explore cards). Shows real artwork via useArtwork, falls back to the emoji.
-function GenreSongCard({ styles, c, item, color, onPress, cardStyle }) {
-  const art = useArtwork(item);
+// ── PlaylistHero (module scope) ──────────────────────────────────────────────
+// The big cover shown at the top of a playlist's song-list detail.
+function PlaylistHero({ styles, coverSong }) {
+  const art = useArtwork(coverSong);
   return (
-    <TouchableOpacity style={[styles.gCard, cardStyle]} onPress={onPress} activeOpacity={0.85}>
-      <View style={[styles.gCardArt, { backgroundColor: color + '22' }]}>
-        {art
-          ? <Image source={{ uri: art }} style={styles.gCardArtImg} resizeMode="cover" />
-          : <Text style={styles.gCardEmoji}>{item.emoji || '🎵'}</Text>}
-        <View style={[styles.gCardPlay, { backgroundColor: color }]}>
-          <Ionicons name="play" size={14} color={c.icon} />
-        </View>
-      </View>
-      <Text style={styles.gCardTitle} numberOfLines={1}>{item.title}</Text>
-      <Text style={styles.gCardArtist} numberOfLines={1}>{item.artist}</Text>
-    </TouchableOpacity>
+    <View style={styles.pdHeroArt}>
+      {art
+        ? <Image source={{ uri: art }} style={styles.pdHeroImg} resizeMode="cover" />
+        : <Text style={styles.pdHeroEmoji}>{coverSong?.emoji || '🎵'}</Text>}
+    </View>
   );
 }
 
 // ── PlaylistTile (module scope) ──────────────────────────────────────────────
 // A curated-playlist card for a genre page: cover art (from a representative
 // song) with the playlist name overlaid on a dark gradient, plus a track count.
-function PlaylistTile({ styles, coverSong, name, count, color, onPress }) {
+function PlaylistTile({ styles, coverSong, name, count, onPress }) {
   const art = useArtwork(coverSong);
   return (
-    <TouchableOpacity style={styles.plTile} onPress={onPress} activeOpacity={0.85}>
-      <View style={[styles.plArt, { backgroundColor: color + '33' }]}>
+    <TouchableOpacity style={styles.plTile} onPress={onPress} activeOpacity={0.8}>
+      <View style={styles.plArt}>
         {art
           ? <Image source={{ uri: art }} style={styles.plArtImg} resizeMode="cover" />
           : <Text style={styles.plEmoji}>{coverSong?.emoji || '🎵'}</Text>}
-        <View style={styles.plScrim} />
-        <View style={styles.plScrimTop} />
-        <Text style={styles.plName} numberOfLines={2}>{name}</Text>
       </View>
+      <Text style={styles.plName} numberOfLines={2}>{name}</Text>
       <Text style={styles.plMeta}>{count} songs</Text>
     </TouchableOpacity>
   );
 }
 
-// Build the 4 curated playlists for a genre from its songs. Each rotates the
-// song order a little so "play" starts somewhere different, and uses a distinct
-// cover, while staying honest to the data we actually have.
+// Build 4 curated playlists for a genre — each a genuinely DIFFERENT slice of the
+// genre's (diverse, multi-artist) songs, with its own cover.
 function genrePlaylistsFor(genre, songs) {
-  const rot = (arr, n) => (arr.length ? [...arr.slice(n % arr.length), ...arr.slice(0, n % arr.length)] : arr);
-  return [
-    { id: `${genre}_best`, name: `Best of ${genre}`, songs: rot(songs, 0), cover: songs[0] },
-    { id: `${genre}_new`, name: `New ${genre}`, songs: rot(songs, 2), cover: songs[1] || songs[0] },
-    { id: `${genre}_hits`, name: `${genre} Hits`, songs: rot(songs, 1), cover: songs[2] || songs[0] },
-    { id: `${genre}_party`, name: `${genre} Party`, songs: rot(songs, 3), cover: songs[3] || songs[0] },
-  ].filter(p => p.songs.length);
+  const s = songs;
+  const pick = (idxs) => idxs.map(i => s[i]).filter(Boolean);
+  const lists = [
+    { id: `${genre}_best`,  name: `Best of ${genre}`, songs: s.slice(0, 6),                 cover: s[0] },
+    { id: `${genre}_new`,   name: `New ${genre}`,     songs: [...s.slice(3), ...s.slice(0, 3)], cover: s[3] || s[0] },
+    { id: `${genre}_hits`,  name: `${genre} Hits`,    songs: pick([0, 2, 4, 6, 1, 3]),       cover: s[4] || s[0] },
+    { id: `${genre}_party`, name: `${genre} Party`,   songs: pick([1, 3, 5, 7, 0, 2]),       cover: s[6] || s[1] || s[0] },
+  ];
+  return lists.filter(p => p.songs.length);
 }
 
 // ── ArtistCircle (module scope) ──────────────────────────────────────────────
 // Round artist photo + name, used in a genre page's "Top Artists" row.
-function ArtistCircle({ styles, c, name, color, onPress }) {
+function ArtistCircle({ styles, c, name, onPress }) {
   const photo = useArtistImage(name);
   return (
     <TouchableOpacity style={styles.gArtist} onPress={onPress} activeOpacity={0.85}>
-      <View style={[styles.gArtistArt, { backgroundColor: color + '22', borderColor: color }]}>
+      <View style={styles.gArtistArt}>
         {photo
           ? <Image source={{ uri: photo }} style={styles.gArtistImg} resizeMode="cover" />
-          : <Ionicons name="person" size={30} color={color} />}
+          : <Ionicons name="person" size={24} color={c.textFaint} />}
       </View>
       <Text style={styles.gArtistName} numberOfLines={1}>{name}</Text>
     </TouchableOpacity>
-  );
-}
-
-// ── MoreFromGenre (module scope) ─────────────────────────────────────────────
-// Real songs pulled from a genre's artist (Deezer), shown as a horizontal row of
-// big covers. Renders nothing until/unless real songs come back.
-function MoreFromGenre({ styles, c, artist, color, onPlay }) {
-  const { songs } = useArtistTopSongs(artist);
-  if (!songs.length) return null;
-  const list = songs.slice(0, 12);
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gHRow}>
-      {list.map((item, i) => (
-        <GenreSongCard key={item.id} styles={styles} c={c} item={item} color={color}
-          cardStyle={styles.gHCard} onPress={() => onPlay(item, list, i)} />
-      ))}
-    </ScrollView>
   );
 }
 
@@ -352,6 +374,7 @@ export default function SearchScreen({ navigation }) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const catalogReqRef = useRef(0); // guards against stale (out-of-order) catalog responses
   const [selectedGenre, setSelectedGenre] = useState(null);
+  const [selectedPlaylist, setSelectedPlaylist] = useState(null); // { name, songs, cover }
   const [focused, setFocused] = useState(false);
 
   const [showRecognition, setShowRecognition] = useState(false);
@@ -577,6 +600,8 @@ export default function SearchScreen({ navigation }) {
   const cancel = () => { setQuery(''); setSearchResults([]); setFocused(false); };
   const openGenre = (genre) => { setSelectedGenre(genre); setQuery(''); setSearchResults([]); setFocused(false); };
   const closeGenre = () => setSelectedGenre(null);
+  const openPlaylist = (pl) => setSelectedPlaylist(pl);
+  const closePlaylist = () => setSelectedPlaylist(null);
 
   const showResults = query.length > 0;
   // When the search bar is focused (and nothing typed), show a dedicated
@@ -584,9 +609,44 @@ export default function SearchScreen({ navigation }) {
   const showRecent = focused && !showResults;
 
   // ── GENRE FULL-SCREEN VIEW ───────────────────────────────────────────────
+  // ── PLAYLIST DETAIL — the song list for a tapped playlist ────────────────
+  if (selectedPlaylist) {
+    const pl = selectedPlaylist;
+    return (
+      <View style={styles.container}>
+        <View style={styles.genreHeader}>
+          <TouchableOpacity style={styles.genreBackBtn} onPress={closePlaylist} activeOpacity={0.75}>
+            <Ionicons name="arrow-back" size={20} color={c.icon} />
+          </TouchableOpacity>
+          <View style={styles.genreHeaderCenter}>
+            <Text style={styles.genreHeaderTitle} numberOfLines={1}>{pl.name}</Text>
+          </View>
+          <View style={{ width: 40 }} />
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+          <View style={styles.pdHeader}>
+            <PlaylistHero styles={styles} coverSong={pl.cover} />
+            <Text style={styles.pdTitle} numberOfLines={2}>{pl.name}</Text>
+            <Text style={styles.pdMeta}>{pl.songs.length} songs</Text>
+            <TouchableOpacity style={styles.pdPlayBtn} onPress={() => openSong(pl.songs[0], pl.songs, 0)} activeOpacity={0.85}>
+              <Ionicons name="play" size={18} color="#000" />
+              <Text style={styles.pdPlayText}>Play</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.genreSongList}>
+            {pl.songs.map((item, index) => (
+              <SongRow styles={styles} c={c} key={item.id + index} item={item} index={index}
+                onPress={(s, i) => openSong(s, pl.songs, i)} />
+            ))}
+          </View>
+          <View style={{ height: 120 }} />
+        </ScrollView>
+      </View>
+    );
+  }
+
   if (selectedGenre) {
     const songs = GENRE_SONGS[selectedGenre] || [];
-    const color = GENRE_COLORS[selectedGenre] || '#555';
     const genreArtists = [...new Set(songs.map(s => s.artist).filter(Boolean))];
     const genrePlaylists = genrePlaylistsFor(selectedGenre, songs);
     return (
@@ -596,60 +656,30 @@ export default function SearchScreen({ navigation }) {
             <Ionicons name="arrow-back" size={20} color={c.icon} />
           </TouchableOpacity>
           <View style={styles.genreHeaderCenter}>
-            <View style={[styles.genreIconBadge, { backgroundColor: color + '28' }]}>
-              <Ionicons name={GENRE_ICONS[selectedGenre]} size={18} color={color} />
-            </View>
-            <Text style={[styles.genreHeaderTitle, { color }]}>{selectedGenre}</Text>
+            <Text style={styles.genreHeaderTitle} numberOfLines={1}>{selectedGenre}</Text>
           </View>
           <View style={{ width: 40 }} />
         </View>
         <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-          {/* Popular Playlists — curated entry points; tap to start listening */}
-          {genrePlaylists.length > 0 && (
-            <>
-              <Text style={[styles.gSectionTitle, { color }]}>Popular Playlists</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gHRow}>
-                {genrePlaylists.map(pl => (
-                  <PlaylistTile key={pl.id} styles={styles} coverSong={pl.cover} name={pl.name}
-                    count={pl.songs.length} color={color}
-                    onPress={() => openSong(pl.songs[0], pl.songs, 0)} />
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {/* Popular — the genre's songs as big cover cards */}
-          <Text style={[styles.gSectionTitle, { color }]}>Popular in {selectedGenre}</Text>
-          <View style={styles.gGrid}>
-            {songs.map((item, index) => (
-              <GenreSongCard styles={styles} c={c}
-                key={item.id}
-                item={item}
-                color={color}
-                onPress={() => openSong(item, songs, index)}
-              />
+          {/* Popular Playlists — curated; tap opens the song list */}
+          <Text style={styles.gSectionTitle}>Popular Playlists</Text>
+          <View style={styles.plGrid}>
+            {genrePlaylists.map(pl => (
+              <PlaylistTile key={pl.id} styles={styles} coverSong={pl.cover} name={pl.name}
+                count={pl.songs.length} onPress={() => openPlaylist(pl)} />
             ))}
           </View>
 
           {/* Top Artists — the real artists behind this genre's songs */}
           {genreArtists.length > 0 && (
             <>
-              <Text style={[styles.gSectionTitle, { color }]}>Top Artists</Text>
+              <Text style={styles.gSectionTitle}>Top Artists</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gHRow}>
                 {genreArtists.map(name => (
-                  <ArtistCircle key={name} styles={styles} c={c} name={name} color={color}
+                  <ArtistCircle key={name} styles={styles} c={c} name={name}
                     onPress={() => navigation.navigate('Artist', { artist: { id: name, name, genre: selectedGenre, emoji: '🎤' } })} />
                 ))}
               </ScrollView>
-            </>
-          )}
-
-          {/* More — real tracks pulled from this genre's lead artist */}
-          {genreArtists[0] && (
-            <>
-              <Text style={[styles.gSectionTitle, { color }]}>More {selectedGenre}</Text>
-              <MoreFromGenre styles={styles} c={c} artist={genreArtists[0]} color={color}
-                onPlay={(item, list, i) => openSong(item, list, i)} />
             </>
           )}
 
@@ -1063,32 +1093,31 @@ const makeStyles = (c) => StyleSheet.create({
   },
   genreHeaderTitle: { fontSize: 20, fontWeight: '900' },
   genreSongList: { paddingHorizontal: 20, marginTop: 8 },
-  // Genre page — big square cover cards in a 2-col grid (like the Player's Explore)
-  gSectionTitle: { fontSize: 18, fontWeight: '900', paddingHorizontal: 20, marginTop: 10, marginBottom: 14 },
-  gGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, justifyContent: 'space-between' },
-  gCard: { width: '47%', marginBottom: 20 },
-  gCardArt: { width: '100%', aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 8 },
-  gCardArtImg: { width: '100%', height: '100%' },
-  gCardEmoji: { fontSize: 54 },
-  gCardPlay: { position: 'absolute', bottom: 8, right: 8, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  gCardTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
-  gCardArtist: { color: c.textFaint, fontSize: 12, marginTop: 2 },
-  // Curated playlist tiles
-  plTile: { width: 160 },
-  plArt: { width: 160, height: 160, borderRadius: 16, overflow: 'hidden', justifyContent: 'flex-end', alignItems: 'center' },
-  plArtImg: { ...StyleSheet.absoluteFillObject, width: 160, height: 160 },
-  plEmoji: { fontSize: 54, position: 'absolute', top: 52 },
-  plScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 90, backgroundColor: 'rgba(0,0,0,0.55)' },
-  plScrimTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 40, backgroundColor: 'rgba(0,0,0,0.18)' },
-  plName: { color: '#fff', fontSize: 16, fontWeight: '900', textAlign: 'center', paddingHorizontal: 12, paddingBottom: 12, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 6 },
-  plMeta: { color: c.textFaint, fontSize: 12, fontWeight: '600', marginTop: 8, marginLeft: 2 },
-  // Horizontal rows (Top Artists, More <genre>)
-  gHRow: { paddingHorizontal: 20, paddingBottom: 6, gap: 14 },
-  gHCard: { width: 150 },
-  gArtist: { width: 96, alignItems: 'center' },
-  gArtistArt: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 1.5, marginBottom: 8 },
+  // Clean, professional genre page (Spotify-style)
+  gSectionTitle: { color: c.text, fontSize: 20, fontWeight: '900', paddingHorizontal: 20, marginTop: 14, marginBottom: 14 },
+  // Popular Playlists — tidy 2-column grid of small, clean cover tiles
+  plGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, justifyContent: 'space-between' },
+  plTile: { width: '47%', marginBottom: 20 },
+  plArt: { width: '100%', aspectRatio: 1, borderRadius: 8, overflow: 'hidden', backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' },
+  plArtImg: { width: '100%', height: '100%' },
+  plEmoji: { fontSize: 44 },
+  plName: { color: c.text, fontSize: 15, fontWeight: '800', marginTop: 8 },
+  plMeta: { color: c.textFaint, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  // Top Artists — small round photos, no colour tint
+  gHRow: { paddingHorizontal: 20, paddingBottom: 6, gap: 16 },
+  gArtist: { width: 64, alignItems: 'center' },
+  gArtistArt: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', backgroundColor: c.elevated },
   gArtistImg: { width: '100%', height: '100%' },
-  gArtistName: { color: c.text, fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  gArtistName: { color: c.text, fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 6 },
+  // Playlist detail (song list) header
+  pdHeader: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 18 },
+  pdHeroArt: { width: 180, height: 180, borderRadius: 12, overflow: 'hidden', backgroundColor: c.elevated, alignItems: 'center', justifyContent: 'center' },
+  pdHeroImg: { width: '100%', height: '100%' },
+  pdHeroEmoji: { fontSize: 64 },
+  pdTitle: { color: c.text, fontSize: 22, fontWeight: '900', textAlign: 'center', marginTop: 16 },
+  pdMeta: { color: c.textFaint, fontSize: 13, fontWeight: '600', marginTop: 4 },
+  pdPlayBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1DB954', paddingHorizontal: 32, paddingVertical: 12, borderRadius: 30, marginTop: 16 },
+  pdPlayText: { color: '#000', fontSize: 15, fontWeight: '800' },
 
   // Recognition modal
   recognitionOverlay: {
