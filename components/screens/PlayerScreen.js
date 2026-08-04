@@ -116,6 +116,60 @@ function QueueRow({ song, index, isCurrent, bgColor, onPress, styles }) {
   );
 }
 
+// Split a song's artist/title into a main artist + featured artists. Handles
+// "feat."/"ft."/"featuring" in the title or artist field, plus comma/& lists.
+function parseCredits(song) {
+  const raw = (song?.artist || '').trim();
+  const title = song?.title || '';
+  const featSrc = (title.match(/\((?:feat\.?|ft\.?|featuring)\s+([^)]+)\)/i)?.[1])
+    || (raw.match(/(?:feat\.?|ft\.?|featuring)\s+(.+)/i)?.[1]) || '';
+  let featured = featSrc.split(/,|&|\bx\b|\band\b/i).map(s => s.trim()).filter(Boolean);
+  const mainPart = raw.replace(/(?:feat\.?|ft\.?|featuring).*/i, '').trim();
+  const mainSplit = mainPart.split(/,|&/).map(s => s.trim()).filter(Boolean);
+  const main = mainSplit[0] || raw || 'Unknown Artist';
+  featured = [...new Set([...mainSplit.slice(1), ...featured])]
+    .filter(n => n && n.toLowerCase() !== main.toLowerCase());
+  return { main, featured };
+}
+
+const artistIdOf = (name) => `artist_${(name || '').toLowerCase().replace(/\s+/g, '_')}`;
+
+// One credit line: role + artist name + a Follow toggle.
+function CreditArtistRow({ styles, role, name, bgColor, following, onToggle }) {
+  return (
+    <View style={styles.creditArtistRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.creditRole}>{role}</Text>
+        <Text style={styles.creditArtistName} numberOfLines={1}>{name}</Text>
+      </View>
+      <TouchableOpacity
+        onPress={onToggle}
+        activeOpacity={0.8}
+        style={[styles.followBtn, following ? { backgroundColor: bgColor } : { borderColor: bgColor, borderWidth: 1.5 }]}>
+        <Text style={[styles.followBtnText, following ? { color: '#000' } : { color: bgColor }]}>
+          {following ? 'Following' : 'Follow'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Explore tile: a large square cover with title/artist, laid out side-by-side.
+function ExploreCard({ styles, song, bgColor, onPress }) {
+  const art = useArtwork(song);
+  return (
+    <TouchableOpacity style={styles.exploreCard} onPress={onPress} activeOpacity={0.85}>
+      <View style={[styles.exploreArt, { backgroundColor: bgColor + '25' }]}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.exploreArtImg} resizeMode="cover" />
+          : <Text style={styles.exploreEmoji}>{song.emoji || '🎵'}</Text>}
+      </View>
+      <Text style={styles.exploreTitle} numberOfLines={1}>{song.title}</Text>
+      <Text style={styles.exploreArtist} numberOfLines={1}>{song.artist}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const LYRIC_LINE_H = 46;
 
 // YouTube-style double-tap seek. A second tap on the same side within this window
@@ -166,6 +220,7 @@ export default function PlayerScreen({ navigation, route }) {
     sleepTimerLabel, setSleepTimer, cancelSleepTimer,
     downloadSong, isDownloaded, colors: c,
     excludeFromTaste, isExcludedFromTaste,
+    toggleFollowArtist, isFollowingArtist,
   } = useUser();
   const styles = makeStyles(c);
 
@@ -256,6 +311,8 @@ export default function PlayerScreen({ navigation, route }) {
   const artistBio = curatedArtist?.bio || fetchedBio || artistInfo.bio;
   // Explore: other real songs by the current artist (for the inline section under lyrics).
   const { songs: exploreSongs } = useArtistTopSongs(displaySong.artist);
+  // Main + featured artists parsed from the song, for the credit block.
+  const credits = parseCredits(displaySong);
 
   const isLiked = isSongLiked(displaySong.id);
   // Background adapts to the playing song's cover art (any genre); falls back to
@@ -1349,32 +1406,45 @@ export default function PlayerScreen({ navigation, route }) {
             </Animated.View>
           )}
 
-          {/* Song credit — inline, just under the lyrics bar */}
+          {/* Song credit — Main + Featured artists, each with a Follow toggle */}
           <View style={styles.inlineCard}>
             <Text style={[styles.inlineCardTitle, { color: bgColor }]}>Song Credit</Text>
-            <View style={styles.creditRow}><Text style={styles.creditKey}>Title</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.title || '—'}</Text></View>
-            <View style={styles.creditRow}><Text style={styles.creditKey}>Artist</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.artist || '—'}</Text></View>
-            {displaySong.album ? (
-              <View style={styles.creditRow}><Text style={styles.creditKey}>Album</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.album}</Text></View>
-            ) : null}
-            <View style={[styles.creditRow, { borderBottomWidth: 0 }]}><Text style={styles.creditKey}>Genre</Text><Text style={styles.creditVal}>{displaySong.genre || artistInfo.genre || '—'}</Text></View>
+            <CreditArtistRow
+              styles={styles}
+              role="Main Artist"
+              name={credits.main}
+              bgColor={bgColor}
+              following={isFollowingArtist(artistIdOf(credits.main))}
+              onToggle={() => toggleFollowArtist({ id: artistIdOf(credits.main), name: credits.main, genre: displaySong.genre || artistInfo.genre, emoji: '🎤' })}
+            />
+            {credits.featured.map((name) => (
+              <CreditArtistRow
+                key={name}
+                styles={styles}
+                role="Featured Artist"
+                name={name}
+                bgColor={bgColor}
+                following={isFollowingArtist(artistIdOf(name))}
+                onToggle={() => toggleFollowArtist({ id: artistIdOf(name), name, genre: displaySong.genre || artistInfo.genre, emoji: '🎤' })}
+              />
+            ))}
           </View>
 
-          {/* Explore — more songs by the current artist */}
+          {/* Explore — more songs by the current artist, side-by-side big covers */}
           {exploreSongs.filter(s => s.id !== displaySong.id).length > 0 && (
             <View style={styles.inlineCard}>
               <Text style={[styles.inlineCardTitle, { color: bgColor }]}>Explore · More from {displaySong.artist}</Text>
-              {exploreSongs.filter(s => s.id !== displaySong.id).slice(0, 6).map((s, i, arr) => (
-                <QueueRow
-                  key={s.id}
-                  song={s}
-                  index={i}
-                  isCurrent={false}
-                  bgColor={bgColor}
-                  styles={styles}
-                  onPress={() => loadAndPlay(s, arr, i)}
-                />
-              ))}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exploreRow}>
+                {exploreSongs.filter(s => s.id !== displaySong.id).slice(0, 12).map((s, i, arr) => (
+                  <ExploreCard
+                    key={s.id}
+                    styles={styles}
+                    song={s}
+                    bgColor={bgColor}
+                    onPress={() => loadAndPlay(s, arr, i)}
+                  />
+                ))}
+              </ScrollView>
             </View>
           )}
 
@@ -2278,6 +2348,20 @@ const makeStyles = (c) => StyleSheet.create({
   // Inline cards under the lyrics bar (Song Credit + Explore)
   inlineCard: { marginHorizontal: 20, backgroundColor: 'rgba(0,0,0,0.38)', borderRadius: 20, padding: 18, marginBottom: 16 },
   inlineCardTitle: { fontSize: 15, fontWeight: '800', marginBottom: 8 },
+  // Credit rows with a Follow button per artist
+  creditArtistRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  creditRole: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '700', marginBottom: 2 },
+  creditArtistName: { color: c.text, fontSize: 15, fontWeight: '800' },
+  followBtn: { paddingHorizontal: 18, paddingVertical: 7, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  followBtnText: { fontSize: 13, fontWeight: '800' },
+  // Explore — side-by-side big covers (~3x the old 46px thumbnail)
+  exploreRow: { gap: 14, paddingTop: 6, paddingRight: 4 },
+  exploreCard: { width: 140 },
+  exploreArt: { width: 140, height: 140, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 8 },
+  exploreArtImg: { width: '100%', height: '100%' },
+  exploreEmoji: { fontSize: 46 },
+  exploreTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
+  exploreArtist: { color: c.textFaint, fontSize: 12, marginTop: 2 },
   modalSheet: { backgroundColor: c.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, maxHeight: SCREEN_HEIGHT * 0.9 },
   modalHandle: { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
