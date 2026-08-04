@@ -227,6 +227,39 @@ function GenreSongCard({ styles, c, item, color, onPress, cardStyle }) {
   );
 }
 
+// ── PlaylistTile (module scope) ──────────────────────────────────────────────
+// A curated-playlist card for a genre page: cover art (from a representative
+// song) with the playlist name overlaid on a dark gradient, plus a track count.
+function PlaylistTile({ styles, coverSong, name, count, color, onPress }) {
+  const art = useArtwork(coverSong);
+  return (
+    <TouchableOpacity style={styles.plTile} onPress={onPress} activeOpacity={0.85}>
+      <View style={[styles.plArt, { backgroundColor: color + '33' }]}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.plArtImg} resizeMode="cover" />
+          : <Text style={styles.plEmoji}>{coverSong?.emoji || '🎵'}</Text>}
+        <View style={styles.plScrim} />
+        <View style={styles.plScrimTop} />
+        <Text style={styles.plName} numberOfLines={2}>{name}</Text>
+      </View>
+      <Text style={styles.plMeta}>{count} songs</Text>
+    </TouchableOpacity>
+  );
+}
+
+// Build the 4 curated playlists for a genre from its songs. Each rotates the
+// song order a little so "play" starts somewhere different, and uses a distinct
+// cover, while staying honest to the data we actually have.
+function genrePlaylistsFor(genre, songs) {
+  const rot = (arr, n) => (arr.length ? [...arr.slice(n % arr.length), ...arr.slice(0, n % arr.length)] : arr);
+  return [
+    { id: `${genre}_best`, name: `Best of ${genre}`, songs: rot(songs, 0), cover: songs[0] },
+    { id: `${genre}_new`, name: `New ${genre}`, songs: rot(songs, 2), cover: songs[1] || songs[0] },
+    { id: `${genre}_hits`, name: `${genre} Hits`, songs: rot(songs, 1), cover: songs[2] || songs[0] },
+    { id: `${genre}_party`, name: `${genre} Party`, songs: rot(songs, 3), cover: songs[3] || songs[0] },
+  ].filter(p => p.songs.length);
+}
+
 // ── ArtistCircle (module scope) ──────────────────────────────────────────────
 // Round artist photo + name, used in a genre page's "Top Artists" row.
 function ArtistCircle({ styles, c, name, color, onPress }) {
@@ -555,6 +588,7 @@ export default function SearchScreen({ navigation }) {
     const songs = GENRE_SONGS[selectedGenre] || [];
     const color = GENRE_COLORS[selectedGenre] || '#555';
     const genreArtists = [...new Set(songs.map(s => s.artist).filter(Boolean))];
+    const genrePlaylists = genrePlaylistsFor(selectedGenre, songs);
     return (
       <View style={styles.container}>
         <View style={styles.genreHeader}>
@@ -570,6 +604,20 @@ export default function SearchScreen({ navigation }) {
           <View style={{ width: 40 }} />
         </View>
         <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+          {/* Popular Playlists — curated entry points; tap to start listening */}
+          {genrePlaylists.length > 0 && (
+            <>
+              <Text style={[styles.gSectionTitle, { color }]}>Popular Playlists</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gHRow}>
+                {genrePlaylists.map(pl => (
+                  <PlaylistTile key={pl.id} styles={styles} coverSong={pl.cover} name={pl.name}
+                    count={pl.songs.length} color={color}
+                    onPress={() => openSong(pl.songs[0], pl.songs, 0)} />
+                ))}
+              </ScrollView>
+            </>
+          )}
+
           {/* Popular — the genre's songs as big cover cards */}
           <Text style={[styles.gSectionTitle, { color }]}>Popular in {selectedGenre}</Text>
           <View style={styles.gGrid}>
@@ -1025,6 +1073,15 @@ const makeStyles = (c) => StyleSheet.create({
   gCardPlay: { position: 'absolute', bottom: 8, right: 8, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   gCardTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
   gCardArtist: { color: c.textFaint, fontSize: 12, marginTop: 2 },
+  // Curated playlist tiles
+  plTile: { width: 160 },
+  plArt: { width: 160, height: 160, borderRadius: 16, overflow: 'hidden', justifyContent: 'flex-end', alignItems: 'center' },
+  plArtImg: { ...StyleSheet.absoluteFillObject, width: 160, height: 160 },
+  plEmoji: { fontSize: 54, position: 'absolute', top: 52 },
+  plScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 90, backgroundColor: 'rgba(0,0,0,0.55)' },
+  plScrimTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 40, backgroundColor: 'rgba(0,0,0,0.18)' },
+  plName: { color: '#fff', fontSize: 16, fontWeight: '900', textAlign: 'center', paddingHorizontal: 12, paddingBottom: 12, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 6 },
+  plMeta: { color: c.textFaint, fontSize: 12, fontWeight: '600', marginTop: 8, marginLeft: 2 },
   // Horizontal rows (Top Artists, More <genre>)
   gHRow: { paddingHorizontal: 20, paddingBottom: 6, gap: 14 },
   gHCard: { width: 150 },
