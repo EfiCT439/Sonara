@@ -316,11 +316,11 @@ function ArtistCircle({ styles, c, name, onPress }) {
 }
 
 // ── SongRow (module scope) ───────────────────────────────────────────────────
-function SongRow({ styles, c, item, index, onPress, accentColor }) {
+function SongRow({ styles, c, item, index, onPress, accentColor, rowStyle }) {
   const art = useArtwork(item);
   return (
     <TouchableOpacity
-      style={styles.resultRow}
+      style={[styles.resultRow, rowStyle]}
       onPress={() => onPress(item, index)}
       activeOpacity={0.7}>
       <View style={styles.resultArt}>
@@ -636,6 +636,7 @@ export default function SearchScreen({ navigation }) {
           <View style={styles.genreSongList}>
             {pl.songs.map((item, index) => (
               <SongRow styles={styles} c={c} key={item.id + index} item={item} index={index}
+                rowStyle={styles.pdSongRow}
                 onPress={(s, i) => openSong(s, pl.songs, i)} />
             ))}
           </View>
@@ -1119,6 +1120,8 @@ const makeStyles = (c) => StyleSheet.create({
   pdMeta: { color: c.textFaint, fontSize: 13, fontWeight: '600', marginTop: 4 },
   pdPlayBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1DB954', paddingHorizontal: 32, paddingVertical: 12, borderRadius: 30, marginTop: 16 },
   pdPlayText: { color: '#000', fontSize: 15, fontWeight: '800' },
+  // Clean playlist song rows — no grey card, just the cover + title
+  pdSongRow: { backgroundColor: 'transparent', borderRadius: 0, paddingHorizontal: 0, marginBottom: 2 },
 
   // Recognition modal
   recognitionOverlay: {
