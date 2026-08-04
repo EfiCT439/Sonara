@@ -270,7 +270,7 @@ function PlaylistHero({ styles, coverSong }) {
 // ── PlaylistTile (module scope) ──────────────────────────────────────────────
 // A curated-playlist card for a genre page: cover art (from a representative
 // song) with the playlist name overlaid on a dark gradient, plus a track count.
-function PlaylistTile({ styles, coverSong, name, count, onPress }) {
+function PlaylistTile({ styles, coverSong, name, artists, onPress }) {
   const art = useArtwork(coverSong);
   return (
     <TouchableOpacity style={styles.plTile} onPress={onPress} activeOpacity={0.8}>
@@ -280,7 +280,7 @@ function PlaylistTile({ styles, coverSong, name, count, onPress }) {
           : <Text style={styles.plEmoji}>{coverSong?.emoji || '🎵'}</Text>}
       </View>
       <Text style={styles.plName} numberOfLines={2}>{name}</Text>
-      <Text style={styles.plMeta}>{count} songs</Text>
+      <Text style={styles.plMeta} numberOfLines={1}>{artists}</Text>
     </TouchableOpacity>
   );
 }
@@ -666,7 +666,8 @@ export default function SearchScreen({ navigation }) {
           <View style={styles.plGrid}>
             {genrePlaylists.map(pl => (
               <PlaylistTile key={pl.id} styles={styles} coverSong={pl.cover} name={pl.name}
-                count={pl.songs.length} onPress={() => openPlaylist(pl)} />
+                artists={[...new Set(pl.songs.map(s => s.artist))].slice(0, 3).join(', ')}
+                onPress={() => openPlaylist(pl)} />
             ))}
           </View>
 
