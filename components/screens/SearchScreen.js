@@ -8,7 +8,7 @@ import { Audio } from 'expo-av';
 import { useUser } from '../../context/UserContext';
 import api from '../../services/api';
 import { searchAudius } from '../../services/audius';
-import { useArtwork, useTrendingSongs } from '../../services/artwork';
+import { useArtwork, useTrendingSongs, useArtistImage, useArtistTopSongs } from '../../services/artwork';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_W = Math.floor(SCREEN_W * 0.38);
@@ -209,10 +209,10 @@ function GenreCard({ styles, genre, color, icon, song, onPress }) {
 // ── GenreSongCard (module scope) ─────────────────────────────────────────────
 // Big square cover card used inside a genre page (same look as the Player's
 // Explore cards). Shows real artwork via useArtwork, falls back to the emoji.
-function GenreSongCard({ styles, c, item, color, onPress }) {
+function GenreSongCard({ styles, c, item, color, onPress, cardStyle }) {
   const art = useArtwork(item);
   return (
-    <TouchableOpacity style={styles.gCard} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity style={[styles.gCard, cardStyle]} onPress={onPress} activeOpacity={0.85}>
       <View style={[styles.gCardArt, { backgroundColor: color + '22' }]}>
         {art
           ? <Image source={{ uri: art }} style={styles.gCardArtImg} resizeMode="cover" />
@@ -224,6 +224,39 @@ function GenreSongCard({ styles, c, item, color, onPress }) {
       <Text style={styles.gCardTitle} numberOfLines={1}>{item.title}</Text>
       <Text style={styles.gCardArtist} numberOfLines={1}>{item.artist}</Text>
     </TouchableOpacity>
+  );
+}
+
+// ── ArtistCircle (module scope) ──────────────────────────────────────────────
+// Round artist photo + name, used in a genre page's "Top Artists" row.
+function ArtistCircle({ styles, c, name, color, onPress }) {
+  const photo = useArtistImage(name);
+  return (
+    <TouchableOpacity style={styles.gArtist} onPress={onPress} activeOpacity={0.85}>
+      <View style={[styles.gArtistArt, { backgroundColor: color + '22', borderColor: color }]}>
+        {photo
+          ? <Image source={{ uri: photo }} style={styles.gArtistImg} resizeMode="cover" />
+          : <Ionicons name="person" size={30} color={color} />}
+      </View>
+      <Text style={styles.gArtistName} numberOfLines={1}>{name}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ── MoreFromGenre (module scope) ─────────────────────────────────────────────
+// Real songs pulled from a genre's artist (Deezer), shown as a horizontal row of
+// big covers. Renders nothing until/unless real songs come back.
+function MoreFromGenre({ styles, c, artist, color, onPlay }) {
+  const { songs } = useArtistTopSongs(artist);
+  if (!songs.length) return null;
+  const list = songs.slice(0, 12);
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gHRow}>
+      {list.map((item, i) => (
+        <GenreSongCard key={item.id} styles={styles} c={c} item={item} color={color}
+          cardStyle={styles.gHCard} onPress={() => onPlay(item, list, i)} />
+      ))}
+    </ScrollView>
   );
 }
 
@@ -521,6 +554,7 @@ export default function SearchScreen({ navigation }) {
   if (selectedGenre) {
     const songs = GENRE_SONGS[selectedGenre] || [];
     const color = GENRE_COLORS[selectedGenre] || '#555';
+    const genreArtists = [...new Set(songs.map(s => s.artist).filter(Boolean))];
     return (
       <View style={styles.container}>
         <View style={styles.genreHeader}>
@@ -536,6 +570,7 @@ export default function SearchScreen({ navigation }) {
           <View style={{ width: 40 }} />
         </View>
         <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+          {/* Popular — the genre's songs as big cover cards */}
           <Text style={[styles.gSectionTitle, { color }]}>Popular in {selectedGenre}</Text>
           <View style={styles.gGrid}>
             {songs.map((item, index) => (
@@ -547,6 +582,29 @@ export default function SearchScreen({ navigation }) {
               />
             ))}
           </View>
+
+          {/* Top Artists — the real artists behind this genre's songs */}
+          {genreArtists.length > 0 && (
+            <>
+              <Text style={[styles.gSectionTitle, { color }]}>Top Artists</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.gHRow}>
+                {genreArtists.map(name => (
+                  <ArtistCircle key={name} styles={styles} c={c} name={name} color={color}
+                    onPress={() => navigation.navigate('Artist', { artist: { id: name, name, genre: selectedGenre, emoji: '🎤' } })} />
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {/* More — real tracks pulled from this genre's lead artist */}
+          {genreArtists[0] && (
+            <>
+              <Text style={[styles.gSectionTitle, { color }]}>More {selectedGenre}</Text>
+              <MoreFromGenre styles={styles} c={c} artist={genreArtists[0]} color={color}
+                onPlay={(item, list, i) => openSong(item, list, i)} />
+            </>
+          )}
+
           <View style={{ height: 120 }} />
         </ScrollView>
       </View>
@@ -967,6 +1025,13 @@ const makeStyles = (c) => StyleSheet.create({
   gCardPlay: { position: 'absolute', bottom: 8, right: 8, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   gCardTitle: { color: c.text, fontSize: 14, fontWeight: '700' },
   gCardArtist: { color: c.textFaint, fontSize: 12, marginTop: 2 },
+  // Horizontal rows (Top Artists, More <genre>)
+  gHRow: { paddingHorizontal: 20, paddingBottom: 6, gap: 14 },
+  gHCard: { width: 150 },
+  gArtist: { width: 96, alignItems: 'center' },
+  gArtistArt: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 1.5, marginBottom: 8 },
+  gArtistImg: { width: '100%', height: '100%' },
+  gArtistName: { color: c.text, fontSize: 13, fontWeight: '700', textAlign: 'center' },
 
   // Recognition modal
   recognitionOverlay: {
