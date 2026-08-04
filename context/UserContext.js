@@ -84,6 +84,7 @@ export function UserProvider({ children }) {
     { id: '3', title: 'Upgrade to Premium', message: 'Get unlimited skips and more for just $1/month!', time: '1 day ago', read: true },
   ]);
   const [listeningHabits, setListeningHabits] = useState({ genres: {}, artists: {}, songs: {} });
+  const [excludedFromTaste, setExcludedFromTaste] = useState([]); // song ids the user excluded from recommendations
 
   // Privacy: when on, played songs are NOT recorded to history or habits.
   const [privateSession, setPrivateSession] = useState(false);
@@ -458,6 +459,7 @@ export function UserProvider({ children }) {
 
   const trackSongPlay = (song) => {
     if (privateSession) return; // private session — don't record activity
+    if (song && excludedFromTaste.includes(song.id)) return; // user excluded this song from their taste profile
     setRecentlyPlayed(prev => {
       const filtered = prev.filter(s => s.id !== song.id);
       return [song, ...filtered].slice(0, 20);
@@ -475,6 +477,28 @@ export function UserProvider({ children }) {
     setRecentlyPlayed([]);
     setListeningHabits({ genres: {}, artists: {}, songs: {} });
   };
+
+  // Exclude a song from the taste profile: never count it again AND strip the
+  // influence it already had (its genre/artist play counts, its song entry, and
+  // its slot in Recently Played) so it stops shaping Home/Search recommendations.
+  const excludeFromTaste = (song) => {
+    if (!song?.id) return;
+    setExcludedFromTaste(prev => (prev.includes(song.id) ? prev : [...prev, song.id]));
+    setRecentlyPlayed(prev => prev.filter(s => s.id !== song.id));
+    setListeningHabits(prev => {
+      const plays = prev.songs[song.id] || 0;
+      const dec = (map, key) => {
+        if (!key || !(key in map)) return map;
+        const left = (map[key] || 0) - plays;
+        const next = { ...map };
+        if (left > 0) next[key] = left; else delete next[key];
+        return next;
+      };
+      const songs = { ...prev.songs }; delete songs[song.id];
+      return { genres: dec(prev.genres, song.genre), artists: dec(prev.artists, song.artist), songs };
+    });
+  };
+  const isExcludedFromTaste = (id) => excludedFromTaste.includes(id);
 
   // Search history — shared so QR-scanned songs can be saved to it too
   const addToSearchHistory = (song) => {
@@ -652,6 +676,7 @@ export function UserProvider({ children }) {
       notifications, setNotifications, markAllNotificationsRead, unreadCount,
       listeningHabits, trackSongPlay, getTopGenres, getTopArtists,
       privateSession, setPrivateSession, clearListeningHistory,
+      excludeFromTaste, isExcludedFromTaste,
       themeKey, setThemeKey, toggleTheme, colors, isDark,
       syncPremiumFromBackend,
       // Global player

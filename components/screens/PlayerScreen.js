@@ -11,7 +11,7 @@ import { Video, ResizeMode } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { useUser } from '../../context/UserContext';
-import { useArtwork, useDominantColor, useTrendingSongs, useArtistImage, useArtistBio } from '../../services/artwork';
+import { useArtwork, useDominantColor, useTrendingSongs, useArtistImage, useArtistBio, useArtistTopSongs, getArtistTopSongs, getTrendingSongs } from '../../services/artwork';
 import { useLyrics, activeSyncedIndex } from '../../services/lyricsApi';
 import { findYouTubeId } from '../../services/youtube';
 
@@ -165,6 +165,7 @@ export default function PlayerScreen({ navigation, route }) {
     setIsPlayerOpen,
     sleepTimerLabel, setSleepTimer, cancelSleepTimer,
     downloadSong, isDownloaded, colors: c,
+    excludeFromTaste, isExcludedFromTaste,
   } = useUser();
   const styles = makeStyles(c);
 
@@ -196,6 +197,9 @@ export default function PlayerScreen({ navigation, route }) {
   const [showVideoOptions, setShowVideoOptions] = useState(false); // one "⋯" menu: Queue · Download · Sleep Timer
   const [showPlayerMenu, setShowPlayerMenu] = useState(false); // audio player "⋯" menu: Share · Add to playlist · Download · Queue
   const [showAboutArtist, setShowAboutArtist] = useState(false);
+  const [showCredits, setShowCredits] = useState(false);
+  const [showFloatingLyrics, setShowFloatingLyrics] = useState(false); // single synced line under the art
+  const [radioLoading, setRadioLoading] = useState(false);
   const [showRepeatOptions, setShowRepeatOptions] = useState(false);
   const [showQualityOptions, setShowQualityOptions] = useState(false);
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
@@ -250,6 +254,8 @@ export default function PlayerScreen({ navigation, route }) {
   const artistPhoto = useArtistImage(displaySong.artist);
   const fetchedBio = useArtistBio(displaySong.artist);
   const artistBio = curatedArtist?.bio || fetchedBio || artistInfo.bio;
+  // Explore: other real songs by the current artist (for the inline section under lyrics).
+  const { songs: exploreSongs } = useArtistTopSongs(displaySong.artist);
 
   const isLiked = isSongLiked(displaySong.id);
   // Background adapts to the playing song's cover art (any genre); falls back to
@@ -283,6 +289,18 @@ export default function PlayerScreen({ navigation, route }) {
   const activeLine = useSynced
     ? activeSyncedIndex(fetchedLyrics.synced, displayPosition)
     : activeLyricLine(lyricLines, displayPosition, duration);
+
+  // Floating single-line lyric under the art (toggled from the ⋯ menu): only the
+  // line being sung right now shows, and it fades in each time it changes.
+  const currentLyricText =
+    activeLine >= 0 && lyricLines[activeLine] && !lyricLines[activeLine].isSection
+      ? lyricLines[activeLine].text
+      : '';
+  const floatingLyricAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    floatingLyricAnim.setValue(0);
+    Animated.timing(floatingLyricAnim, { toValue: 1, duration: 260, useNativeDriver: true }).start();
+  }, [activeLine, floatingLyricAnim]);
 
   // Video to play in video mode — real videoUrl if present, else demo fallback.
   const videoSource = displaySong.videoUrl || SAMPLE_VIDEO_URL;
@@ -411,6 +429,41 @@ export default function PlayerScreen({ navigation, route }) {
     }
     downloadSong(displaySong);
     Alert.alert('Downloaded ✅', `"${displaySong.title}" saved to Library › Downloads.`);
+  };
+
+  // ⋯ menu extras
+  const handleGoToArtist = () => {
+    navigation.navigate('Artist', { artist: { id: '1', name: displaySong.artist, genre: artistInfo.genre, emoji: '🎤' } });
+  };
+
+  const handleExcludeTaste = () => {
+    excludeFromTaste(displaySong);
+    Alert.alert('Excluded', `"${displaySong.title}" won't shape your recommendations anymore.`);
+  };
+
+  // Start a radio based on this song: lead with the artist's real songs, then
+  // branch to trending, so the queue keeps playing similar music.
+  const handleGoToRadio = async () => {
+    if (radioLoading) return;
+    setRadioLoading(true);
+    try {
+      const top = await getArtistTopSongs(displaySong.artist).catch(() => []);
+      let pool = (top || []).filter(s => s.id !== displaySong.id);
+      if (pool.length < 4) {
+        const trend = await getTrendingSongs(20).catch(() => []);
+        const seen = new Set([displaySong.id, ...pool.map(s => s.id)]);
+        for (const s of trend) if (!seen.has(s.id)) { seen.add(s.id); pool.push(s); }
+      }
+      const queue = [displaySong, ...pool].slice(0, 30);
+      if (queue.length > 1) {
+        loadAndPlay(displaySong, queue, 0);
+        Alert.alert('Radio started 📻', `Playing a mix based on ${displaySong.artist}.`);
+      } else {
+        Alert.alert('Radio unavailable', 'Could not build a radio for this song right now.');
+      }
+    } finally {
+      setRadioLoading(false);
+    }
   };
 
   // ── Video mode (YouTube) lifecycle ──────────────────────────────
@@ -1112,6 +1165,21 @@ export default function PlayerScreen({ navigation, route }) {
                     : <Text style={styles.albumEmoji}>{displaySong.emoji || '🎵'}</Text>}
                 </View>
               </View>
+
+              {/* Floating synced lyric — only the line being sung right now (⋯ › Lyrics). */}
+              {showFloatingLyrics && (
+                <View style={styles.floatingLyricWrap}>
+                  {currentLyricText ? (
+                    <Animated.Text style={[styles.floatingLyricText, { color: bgColor, opacity: floatingLyricAnim }]} numberOfLines={2}>
+                      {currentLyricText}
+                    </Animated.Text>
+                  ) : (
+                    <Text style={styles.floatingLyricHint}>
+                      {lyricsStatus === 'loading' ? 'Loading lyrics…' : (lyricLines.length ? '♪' : 'No lyrics for this song')}
+                    </Text>
+                  )}
+                </View>
+              )}
             </>
           )}
 
@@ -1279,6 +1347,35 @@ export default function PlayerScreen({ navigation, route }) {
                 </Text>
               )}
             </Animated.View>
+          )}
+
+          {/* Song credit — inline, just under the lyrics bar */}
+          <View style={styles.inlineCard}>
+            <Text style={[styles.inlineCardTitle, { color: bgColor }]}>Song Credit</Text>
+            <View style={styles.creditRow}><Text style={styles.creditKey}>Title</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.title || '—'}</Text></View>
+            <View style={styles.creditRow}><Text style={styles.creditKey}>Artist</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.artist || '—'}</Text></View>
+            {displaySong.album ? (
+              <View style={styles.creditRow}><Text style={styles.creditKey}>Album</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.album}</Text></View>
+            ) : null}
+            <View style={[styles.creditRow, { borderBottomWidth: 0 }]}><Text style={styles.creditKey}>Genre</Text><Text style={styles.creditVal}>{displaySong.genre || artistInfo.genre || '—'}</Text></View>
+          </View>
+
+          {/* Explore — more songs by the current artist */}
+          {exploreSongs.filter(s => s.id !== displaySong.id).length > 0 && (
+            <View style={styles.inlineCard}>
+              <Text style={[styles.inlineCardTitle, { color: bgColor }]}>Explore · More from {displaySong.artist}</Text>
+              {exploreSongs.filter(s => s.id !== displaySong.id).slice(0, 6).map((s, i, arr) => (
+                <QueueRow
+                  key={s.id}
+                  song={s}
+                  index={i}
+                  isCurrent={false}
+                  bgColor={bgColor}
+                  styles={styles}
+                  onPress={() => loadAndPlay(s, arr, i)}
+                />
+              ))}
+            </View>
           )}
 
           <View style={{ height: 60 }} />
@@ -1772,24 +1869,85 @@ export default function PlayerScreen({ navigation, route }) {
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
           <View style={styles.menuDropdown}>
-            <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowShare(true), 220); }} activeOpacity={0.7}>
-              <Ionicons name="share-social-outline" size={18} color={c.icon} />
-              <Text style={styles.menuRowText}>Share</Text>
-            </TouchableOpacity>
-            <View style={styles.menuDivider} />
-            <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => handleAddToPlaylist(displaySong), 220); }} activeOpacity={0.7}>
-              <Ionicons name="add-circle-outline" size={18} color={c.icon} />
-              <Text style={styles.menuRowText}>Add to playlist</Text>
-            </TouchableOpacity>
-            <View style={styles.menuDivider} />
-            <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(handleDownloadSong, 220); }} activeOpacity={0.7}>
-              <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={18} color={isDownloaded(displaySong.id) ? bgColor : c.icon} />
-              <Text style={styles.menuRowText}>{isDownloaded(displaySong.id) ? 'Downloaded' : 'Download'}</Text>
-            </TouchableOpacity>
-            <View style={styles.menuDivider} />
-            <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowQueue(true), 220); }} activeOpacity={0.7}>
-              <Ionicons name="list" size={18} color={c.icon} />
-              <Text style={styles.menuRowText}>Queue</Text>
+            <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowShare(true), 220); }} activeOpacity={0.7}>
+                <Ionicons name="share-social-outline" size={18} color={c.icon} />
+                <Text style={styles.menuRowText}>Share</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => handleAddToPlaylist(displaySong), 220); }} activeOpacity={0.7}>
+                <Ionicons name="add-circle-outline" size={18} color={c.icon} />
+                <Text style={styles.menuRowText}>Add to playlist</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(handleDownloadSong, 220); }} activeOpacity={0.7}>
+                <Ionicons name={isDownloaded(displaySong.id) ? 'checkmark-circle' : 'download-outline'} size={18} color={isDownloaded(displaySong.id) ? bgColor : c.icon} />
+                <Text style={styles.menuRowText}>{isDownloaded(displaySong.id) ? 'Downloaded' : 'Download'}</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowQueue(true), 220); }} activeOpacity={0.7}>
+                <Ionicons name="list" size={18} color={c.icon} />
+                <Text style={styles.menuRowText}>Queue</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowCredits(true), 220); }} activeOpacity={0.7}>
+                <Ionicons name="information-circle-outline" size={18} color={c.icon} />
+                <Text style={styles.menuRowText}>View song credit</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(handleGoToArtist, 220); }} activeOpacity={0.7}>
+                <Ionicons name="person-outline" size={18} color={c.icon} />
+                <Text style={styles.menuRowText}>Go to artist</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(handleGoToRadio, 220); }} activeOpacity={0.7}>
+                <Ionicons name="radio-outline" size={18} color={c.icon} />
+                <Text style={styles.menuRowText}>Go to radio</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowFloatingLyrics(v => !v); setShowPlayerMenu(false); }} activeOpacity={0.7}>
+                <Ionicons name="text-outline" size={18} color={showFloatingLyrics ? bgColor : c.icon} />
+                <Text style={[styles.menuRowText, showFloatingLyrics && { color: bgColor }]}>Lyrics: {showFloatingLyrics ? 'On' : 'Off'}</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={() => { setShowPlayerMenu(false); setTimeout(() => setShowSleepTimer(true), 220); }} activeOpacity={0.7}>
+                <Ionicons name="timer-outline" size={18} color={sleepTimerLabel ? bgColor : c.icon} />
+                <Text style={[styles.menuRowText, sleepTimerLabel && { color: bgColor }]}>Sleep timer{sleepTimerLabel ? ` · ${sleepTimerLabel}` : ''}</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity
+                style={styles.menuRow}
+                disabled={isExcludedFromTaste(displaySong.id)}
+                onPress={() => { setShowPlayerMenu(false); setTimeout(handleExcludeTaste, 220); }}
+                activeOpacity={0.7}>
+                <Ionicons name={isExcludedFromTaste(displaySong.id) ? 'eye-off' : 'eye-off-outline'} size={18} color={isExcludedFromTaste(displaySong.id) ? bgColor : c.icon} />
+                <Text style={[styles.menuRowText, isExcludedFromTaste(displaySong.id) && { color: bgColor }]} numberOfLines={2}>
+                  {isExcludedFromTaste(displaySong.id) ? 'Excluded from taste profile' : 'Exclude from your taste profile'}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Song credits */}
+      <Modal visible={showCredits} transparent animationType="slide" onRequestClose={() => setShowCredits(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Song Credits</Text>
+            <View style={styles.creditRow}><Text style={styles.creditKey}>Title</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.title || '—'}</Text></View>
+            <View style={styles.creditRow}><Text style={styles.creditKey}>Artist</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.artist || '—'}</Text></View>
+            {displaySong.album ? (
+              <View style={styles.creditRow}><Text style={styles.creditKey}>Album</Text><Text style={styles.creditVal} numberOfLines={2}>{displaySong.album}</Text></View>
+            ) : null}
+            <View style={styles.creditRow}><Text style={styles.creditKey}>Genre</Text><Text style={styles.creditVal}>{displaySong.genre || artistInfo.genre || '—'}</Text></View>
+            {duration ? (
+              <View style={styles.creditRow}><Text style={styles.creditKey}>Duration</Text><Text style={styles.creditVal}>{formatTime(duration)}</Text></View>
+            ) : null}
+            <Text style={styles.creditNote}>Detailed writing & production credits aren’t available for this track yet.</Text>
+            <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setShowCredits(false)}>
+              <Text style={styles.sheetCloseBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2099,14 +2257,27 @@ const makeStyles = (c) => StyleSheet.create({
   // Top-right ⋯ dropdown: compact, ~half-width, anchored just under the header button.
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)' },
   menuDropdown: {
-    position: 'absolute', top: 102, right: 16, width: Math.min(220, SCREEN_WIDTH * 0.55),
+    position: 'absolute', top: 102, right: 16, width: Math.min(280, SCREEN_WIDTH * 0.72),
+    maxHeight: SCREEN_HEIGHT * 0.62,
     backgroundColor: c.surface, borderRadius: 16, paddingVertical: 4,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
     shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 12,
   },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 16 },
-  menuRowText: { color: c.text, fontSize: 14, fontWeight: '600' },
+  menuRowText: { color: c.text, fontSize: 14, fontWeight: '600', flex: 1 },
   menuDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 12 },
+  // Floating single-line synced lyric under the album art
+  floatingLyricWrap: { minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30, marginTop: -8, marginBottom: 18 },
+  floatingLyricText: { fontSize: 18, fontWeight: '800', textAlign: 'center', lineHeight: 24 },
+  floatingLyricHint: { fontSize: 14, fontWeight: '600', textAlign: 'center', color: 'rgba(255,255,255,0.4)' },
+  // Song credits
+  creditRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)', gap: 16 },
+  creditKey: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '700' },
+  creditVal: { color: c.text, fontSize: 14, fontWeight: '700', flex: 1, textAlign: 'right' },
+  creditNote: { color: 'rgba(255,255,255,0.4)', fontSize: 12, marginTop: 14, marginBottom: 4, lineHeight: 18 },
+  // Inline cards under the lyrics bar (Song Credit + Explore)
+  inlineCard: { marginHorizontal: 20, backgroundColor: 'rgba(0,0,0,0.38)', borderRadius: 20, padding: 18, marginBottom: 16 },
+  inlineCardTitle: { fontSize: 15, fontWeight: '800', marginBottom: 8 },
   modalSheet: { backgroundColor: c.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, maxHeight: SCREEN_HEIGHT * 0.9 },
   modalHandle: { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
