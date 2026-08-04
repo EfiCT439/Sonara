@@ -31,15 +31,6 @@ const GENRE_ICONS = {
   Classic: 'library', Instrumental: 'musical-note',
 };
 
-// Placeholder genre images — replace values with real require() paths or URIs when available
-const GENRE_IMAGES = {
-  Afrobeats: null, 'Hip Hop': null, Rap: null,
-  Amapiano: null, Pop: null, Gospel: null,
-  Praise: null, Worship: null, Rock: null,
-  Reggae: null, Radio: null, Country: null,
-  Decades: null, Jazz: null, Classic: null, Instrumental: null,
-};
-
 const AU = n => `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${n}.mp3`;
 
 const GENRE_SONGS = {
@@ -191,6 +182,26 @@ function DiscoverCard({ styles, c, item, onPress }) {
         <Text style={styles.discoverTitle} numberOfLines={1}>{item.title}</Text>
         <Text style={styles.discoverArtist} numberOfLines={1}>{item.artist}</Text>
       </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── GenreCard (module scope) ─────────────────────────────────────────────────
+// Browse tile: shows the REAL cover art of the genre's top song (via useArtwork)
+// instead of a flat icon. Falls back to the icon until/unless a cover is found.
+function GenreCard({ styles, genre, color, icon, song, onPress }) {
+  const art = useArtwork(song);
+  return (
+    <TouchableOpacity
+      style={[styles.genreCard, { backgroundColor: color }]}
+      onPress={onPress}
+      activeOpacity={0.82}>
+      <View style={styles.genreImgSlot}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.genreImg} resizeMode="cover" />
+          : <Ionicons name={icon} size={20} color="rgba(255,255,255,0.9)" />}
+      </View>
+      <Text style={styles.genreLabel}>{genre}</Text>
     </TouchableOpacity>
   );
 }
@@ -675,26 +686,17 @@ export default function SearchScreen({ navigation }) {
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { marginBottom: 14 }]}>Browse</Text>
               <View style={styles.genreGrid}>
-                {Object.keys(GENRE_SONGS).map(genre => {
-                  const img = GENRE_IMAGES[genre];
-                  return (
-                    <TouchableOpacity
-                      key={genre}
-                      style={[styles.genreCard, { backgroundColor: GENRE_COLORS[genre] }]}
-                      onPress={() => openGenre(genre)}
-                      activeOpacity={0.82}>
-                      {/* Image slot — top-left; shows real image if provided, icon otherwise */}
-                      <View style={styles.genreImgSlot}>
-                        {img ? (
-                          <Image source={img} style={styles.genreImg} resizeMode="cover" />
-                        ) : (
-                          <Ionicons name={GENRE_ICONS[genre]} size={20} color="rgba(255,255,255,0.9)" />
-                        )}
-                      </View>
-                      <Text style={styles.genreLabel}>{genre}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {Object.keys(GENRE_SONGS).map(genre => (
+                  <GenreCard
+                    key={genre}
+                    styles={styles}
+                    genre={genre}
+                    color={GENRE_COLORS[genre]}
+                    icon={GENRE_ICONS[genre]}
+                    song={(GENRE_SONGS[genre] || [])[0]}
+                    onPress={() => openGenre(genre)}
+                  />
+                ))}
               </View>
             </View>
           </>
