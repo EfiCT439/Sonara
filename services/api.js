@@ -1,8 +1,8 @@
 import { NativeModules } from 'react-native';
 
-// Set this to the deployed backend before going live
-// e.g. 'https://sonara-backend.railway.app/api'
-const PROD_API_BASE = '';
+// Deployed backend (Render). When set, the app uses it in BOTH dev and prod, so
+// recognition/API work over the internet from any device — no LAN IP or firewall.
+const PROD_API_BASE = 'https://sonara-backend-ej6w.onrender.com/api';
 
 const LAN_IP = /^\d{1,3}(\.\d{1,3}){3}$/;
 
@@ -16,7 +16,9 @@ function devApiBase() {
   return host && LAN_IP.test(host) ? `http://${host}:5000/api` : 'http://localhost:5000/api';
 }
 
-const API_BASE = !__DEV__ && PROD_API_BASE ? PROD_API_BASE : devApiBase();
+// Prefer the deployed backend whenever it's set (dev + prod); fall back to the
+// local dev server only when no PROD_API_BASE is configured.
+const API_BASE = PROD_API_BASE || devApiBase();
 
 const api = {
   // ── Users ────────────────────────────────────────────────────────
