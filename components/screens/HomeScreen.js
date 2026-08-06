@@ -643,11 +643,11 @@ export default function HomeScreen({ navigation }) {
     return out.slice(0, 8);
   }, [hasListeningData, listeningHabits, onboardingGenres]);
 
-  // ── Based on Your Top Mixes — up to 5 genre "albums" built from the genres the
+  // ── Based on Your Top Mixes — 3 genre "albums" built from the genres the
   // user actually plays; each holds only that genre's (related) songs, leading
   // with the ones they've played. Falls back to onboarding genres for new users.
   const topMixes = useMemo(() => {
-    const genres = (hasListeningData ? getTopGenres(5) : onboardingGenres).filter(g => ALL_SONGS[g]).slice(0, 5);
+    const genres = (hasListeningData ? getTopGenres(5) : onboardingGenres).filter(g => ALL_SONGS[g]).slice(0, 3);
     return genres.map((g, gi) => {
       const played = recentlyPlayed.filter(s => s.genre === g);
       const seen = new Set();
