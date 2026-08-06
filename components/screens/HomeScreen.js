@@ -262,6 +262,42 @@ function MadeForYouCard({ styles, c, playlist, onPress }) {
   );
 }
 
+// Real cover art for a song inside the "Made For You" mix detail sheet.
+// Module scope so useArtwork is legal inside the songs .map.
+function MixSongRow({ styles, c, song, index, onPress }) {
+  const art = useArtwork(song);
+  return (
+    <TouchableOpacity
+      style={styles.mixSongRow}
+      onPress={() => onPress(song, index)}
+      activeOpacity={0.75}>
+      <Text style={styles.mixSongIdx}>{index + 1}</Text>
+      <View style={[styles.mixSongArt, { backgroundColor: (GENRE_COLORS[song.genre] || '#333') + '25' }]}>
+        {art
+          ? <Image source={{ uri: art }} style={styles.mixSongArtImg} resizeMode="cover" />
+          : <Text style={styles.mixSongEmoji}>{song.emoji || '🎵'}</Text>}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.mixSongTitle} numberOfLines={1}>{song.title}</Text>
+        <Text style={styles.mixSongArtist} numberOfLines={1}>{song.artist} · {song.genre}</Text>
+      </View>
+      <Ionicons name="play-circle-outline" size={24} color={c.textFaint} />
+    </TouchableOpacity>
+  );
+}
+
+// The mix's hero cover — the first song's real artwork (falls back to the emoji).
+function MixHeaderArt({ styles, song, emoji, color }) {
+  const art = useArtwork(song);
+  return (
+    <View style={[styles.mixHeadArt, { backgroundColor: color + '25' }]}>
+      {art
+        ? <Image source={{ uri: art }} style={styles.mixHeadArtImg} resizeMode="cover" />
+        : <Text style={styles.mixHeadEmoji}>{emoji || '🎵'}</Text>}
+    </View>
+  );
+}
+
 export default function HomeScreen({ navigation }) {
   const {
     isPremium, favouriteArtists, profileImage,
@@ -774,9 +810,8 @@ export default function HomeScreen({ navigation }) {
             {detailMix && (
               <>
                 <View style={styles.mixHead}>
-                  <View style={[styles.mixHeadArt, { backgroundColor: (GENRE_COLORS[detailMix.songs[0]?.genre] || '#888') + '25' }]}>
-                    <Text style={styles.mixHeadEmoji}>{detailMix.emoji || '🎵'}</Text>
-                  </View>
+                  <MixHeaderArt styles={styles} song={detailMix.songs[0]} emoji={detailMix.emoji}
+                    color={GENRE_COLORS[detailMix.songs[0]?.genre] || '#888'} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.mixHeadName} numberOfLines={1}>{detailMix.name}</Text>
                     <Text style={styles.mixHeadSub}>{detailMix.description}</Text>
@@ -796,21 +831,12 @@ export default function HomeScreen({ navigation }) {
 
                 <ScrollView showsVerticalScrollIndicator={false}>
                   {detailMix.songs.map((song, index) => (
-                    <TouchableOpacity
+                    <MixSongRow styles={styles} c={c}
                       key={`${song.id}_${index}`}
-                      style={styles.mixSongRow}
-                      onPress={() => playFromMix(song, index)}
-                      activeOpacity={0.75}>
-                      <Text style={styles.mixSongIdx}>{index + 1}</Text>
-                      <View style={[styles.mixSongArt, { backgroundColor: (GENRE_COLORS[song.genre] || '#333') + '25' }]}>
-                        <Text style={styles.mixSongEmoji}>{song.emoji || '🎵'}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.mixSongTitle} numberOfLines={1}>{song.title}</Text>
-                        <Text style={styles.mixSongArtist} numberOfLines={1}>{song.artist} · {song.genre}</Text>
-                      </View>
-                      <Ionicons name="play-circle-outline" size={24} color={c.textFaint} />
-                    </TouchableOpacity>
+                      song={song}
+                      index={index}
+                      onPress={playFromMix}
+                    />
                   ))}
                   <View style={{ height: 20 }} />
                 </ScrollView>
@@ -1044,8 +1070,9 @@ const makeStyles = (c) => StyleSheet.create({
   mixHead: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 },
   mixHeadArt: {
     width: 64, height: 64, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
+  mixHeadArtImg: { width: '100%', height: '100%' },
   mixHeadEmoji: { fontSize: 30 },
   mixHeadName: { color: c.text, fontSize: 19, fontWeight: '900', letterSpacing: -0.3 },
   mixHeadSub: { color: c.textDim, fontSize: 12, fontWeight: '600', marginTop: 3 },
@@ -1059,8 +1086,9 @@ const makeStyles = (c) => StyleSheet.create({
   mixSongIdx: { color: c.textFaint, fontSize: 13, fontWeight: '800', width: 20, textAlign: 'center' },
   mixSongArt: {
     width: 46, height: 46, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
+  mixSongArtImg: { width: '100%', height: '100%' },
   mixSongEmoji: { fontSize: 22 },
   mixSongTitle: { color: c.text, fontSize: 15, fontWeight: '700' },
   mixSongArtist: { color: c.textFaint, fontSize: 12, fontWeight: '600', marginTop: 2 },
