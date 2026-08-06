@@ -21,6 +21,14 @@ function devApiBase() {
 const API_BASE = PROD_API_BASE || devApiBase();
 
 const api = {
+  // Wake the (free-tier) backend so it's ready before a real request lands.
+  // Fire-and-forget: call it when the user is about to do something that hits
+  // the server (e.g. opening song recognition), so the cold-start wait overlaps
+  // with the 10-second recording instead of blocking the upload.
+  warmUp() {
+    try { fetch(`${API_BASE.replace(/\/api$/, '')}/`).catch(() => {}); } catch {}
+  },
+
   // ── Users ────────────────────────────────────────────────────────
   async getUser(firebaseUid) {
     try {

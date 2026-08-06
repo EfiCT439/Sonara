@@ -491,6 +491,7 @@ export default function SearchScreen({ navigation }) {
   }, []);
 
   const openRecognition = async () => {
+    api.warmUp(); // wake the free-tier backend while we record, so the upload isn't blocked by a cold start
     setRecognitionState('listening');
     setRecognizedSong(null);
     setRecognitionError(null);
