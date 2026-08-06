@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
-import { useArtwork, useArtistImage } from '../../services/artwork';
+import { useArtwork, useArtistImage, useArtistTopSongs } from '../../services/artwork';
 
 const GENRES = ['All', 'Afrobeats', 'Hip Hop', 'Pop', 'R&B', 'Soul', 'Gospel', 'Amapiano'];
 
@@ -298,6 +298,50 @@ function MixHeaderArt({ styles, song, emoji, color }) {
   );
 }
 
+// ── Vibes — time-of-day song pools (by genre; no real mood metadata exists, so
+// these are curated: gentle mornings, upbeat afternoons, mellow nights). ────
+const VIBE_PERIODS = {
+  morning:   { title: 'Morning Vibes',   emoji: '☀️', genres: ['Gospel', 'Soul', 'Afrobeats', 'Pop'] },
+  afternoon: { title: 'Afternoon Vibes', emoji: '🌤️', genres: ['Pop', 'Amapiano', 'Afrobeats', 'Hip Hop'] },
+  night:     { title: 'Night Vibes',     emoji: '🌙', genres: ['R&B', 'Soul', 'Jazz', 'Afrobeats'] },
+};
+const getVibePeriod = () => {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return 'morning';
+  if (h >= 12 && h < 18) return 'afternoon';
+  return 'night';
+};
+
+// An "album" card for a most-streamed artist. Self-fetches the artist's real
+// songs (Deezer) so every album has ≥4 real tracks + a real cover. Renders
+// nothing until the songs arrive.
+function ArtistAlbumCard({ styles, c, artistName, onOpen }) {
+  const { songs } = useArtistTopSongs(artistName);
+  const cover = useArtwork(songs[0]);
+  if (songs.length < 4) return null;
+  const album = {
+    id: `artalbum_${artistName}`,
+    name: `${artistName} — Essentials`,
+    description: `Top songs by ${artistName}`,
+    emoji: '🎤',
+    songs: songs.slice(0, 12).map((s, i) => ({ ...s, id: `art_${artistName}_${s.id || i}` })),
+  };
+  return (
+    <TouchableOpacity style={styles.mfyCard} onPress={() => onOpen(album)} activeOpacity={0.75}>
+      <View style={styles.mfyArt}>
+        {cover
+          ? <Image source={{ uri: cover }} style={styles.mfyCoverImg} />
+          : <Text style={styles.mfySingleEmoji}>🎤</Text>}
+        <View style={styles.mfyPlayBtn}>
+          <Ionicons name="play" size={13} color={c.icon} />
+        </View>
+      </View>
+      <Text style={styles.mfyTitle} numberOfLines={1}>{artistName}</Text>
+      <Text style={styles.mfyDesc} numberOfLines={1}>{album.songs.length} songs · Essentials</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function HomeScreen({ navigation }) {
   const {
     isPremium, favouriteArtists, profileImage,
@@ -518,6 +562,78 @@ export default function HomeScreen({ navigation }) {
 
     return playlists;
   }, [hasListeningData, listeningHabits, favouriteArtists, recentlyPlayed]);
+
+  // Genres of the artists picked at onboarding — the taste fallback before any plays.
+  const onboardingGenres = useMemo(
+    () => [...new Set(favouriteArtists.map(a => a.genre).filter(g => ALL_SONGS[g]))],
+    [favouriteArtists]
+  );
+
+  // ── Vibes — top 5 songs for the current part of the day, auto-changing by hour.
+  // Leads with the user's top genre when it fits the period; the section restamps
+  // each time Home renders, so morning/afternoon/night swap automatically.
+  const vibePeriod = getVibePeriod();
+  const vibes = useMemo(() => {
+    const def = VIBE_PERIODS[vibePeriod];
+    const ordered = [
+      ...(topGenre && def.genres.includes(topGenre) ? [topGenre] : []),
+      ...def.genres,
+    ];
+    const seen = new Set();
+    const out = [];
+    for (const g of ordered) {
+      for (const s of (ALL_SONGS[g] || [])) {
+        if (!seen.has(s.title) && out.length < 5) { seen.add(s.title); out.push({ ...s, id: `vibe_${s.id}` }); }
+      }
+      if (out.length >= 5) break;
+    }
+    return { ...def, songs: out };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vibePeriod, topGenre]);
+
+  // ── Recommended for you · Today — top 8 songs from the user's taste (top genres
+  // interleaved), refreshed daily. Falls back to onboarding genres / daily picks.
+  const recommendedToday = useMemo(() => {
+    const genres = (hasListeningData ? topGenres : onboardingGenres).filter(g => ALL_SONGS[g]);
+    const seen = new Set();
+    const out = [];
+    // round-robin across the user's genres so it's varied, not one-genre heavy
+    for (let round = 0; round < 4 && out.length < 8; round++) {
+      for (const g of genres) {
+        const s = (ALL_SONGS[g] || [])[round];
+        if (s && !seen.has(s.title) && out.length < 8) { seen.add(s.title); out.push({ ...s, id: `today_${s.id}` }); }
+      }
+    }
+    if (out.length < 8) {
+      for (const s of getDailyRecommendations()) {
+        if (!seen.has(s.title) && out.length < 8) { seen.add(s.title); out.push({ ...s, id: `today_${s.id}` }); }
+      }
+    }
+    return out.slice(0, 8);
+  }, [hasListeningData, listeningHabits, onboardingGenres]);
+
+  // ── Based on Your Top Mixes — up to 5 genre "albums" built from the genres the
+  // user actually plays; each holds only that genre's (related) songs, leading
+  // with the ones they've played. Falls back to onboarding genres for new users.
+  const topMixes = useMemo(() => {
+    const genres = (hasListeningData ? getTopGenres(5) : onboardingGenres).filter(g => ALL_SONGS[g]).slice(0, 5);
+    return genres.map((g, gi) => {
+      const played = recentlyPlayed.filter(s => s.genre === g);
+      const seen = new Set();
+      const songs = [...played, ...(ALL_SONGS[g] || [])]
+        .filter(s => { if (seen.has(s.title)) return false; seen.add(s.title); return true; })
+        .map((s, i) => ({ ...s, id: `tmix_${gi}_${s.id || i}` }));
+      return { id: `tmix_${g}`, name: `${g} Mix`, description: hasListeningData ? 'Based on your plays' : 'From your taste', emoji: '🎧', songs };
+    }).filter(m => m.songs.length > 0);
+  }, [hasListeningData, listeningHabits, recentlyPlayed, onboardingGenres]);
+
+  // ── Your Most Streamed Artists — top 3 artists (or onboarding picks for a new
+  // user). Each card self-fetches ≥4 real songs of that artist (Deezer).
+  const streamedArtists = useMemo(() => {
+    const fromPlays = hasListeningData ? getTopArtists(3) : [];
+    const fromOnboarding = favouriteArtists.map(a => a.name);
+    return [...new Set([...fromPlays, ...fromOnboarding])].slice(0, 3);
+  }, [hasListeningData, listeningHabits, favouriteArtists]);
 
   const openPlayer = (song, queue, index = 0) => {
     loadAndPlay(song, queue, index);
@@ -797,6 +913,90 @@ export default function HomeScreen({ navigation }) {
             )}
           />
         </View>
+
+        {/* Vibes — top 5 songs for the current part of the day (auto-changes by hour) */}
+        {vibes.songs.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{vibes.emoji}  {vibes.title}</Text>
+              <View style={styles.labelPill}>
+                <Text style={styles.labelPillText}>NOW</Text>
+              </View>
+            </View>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={vibes.songs}
+              keyExtractor={item => item.id}
+              contentContainerStyle={{ paddingLeft: 20, paddingRight: 8 }}
+              renderItem={({ item, index }) => (
+                <SongCard styles={styles} c={c} item={item}
+                  onPress={() => openPlayer(item, vibes.songs, index)} />
+              )}
+            />
+          </View>
+        )}
+
+        {/* Recommended for you · Today — top 8 personalised songs */}
+        {recommendedToday.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recommended for you</Text>
+              <View style={styles.labelPill}>
+                <Text style={styles.labelPillText}>TODAY</Text>
+              </View>
+            </View>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={recommendedToday}
+              keyExtractor={item => item.id}
+              contentContainerStyle={{ paddingLeft: 20, paddingRight: 8 }}
+              renderItem={({ item, index }) => (
+                <SongCard styles={styles} c={c} item={item}
+                  onPress={() => openPlayer(item, recommendedToday, index)} />
+              )}
+            />
+          </View>
+        )}
+
+        {/* Based on Your Top Mixes — up to 5 genre albums from the user's plays */}
+        {topMixes.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Based on Your Top Mixes</Text>
+            </View>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={topMixes}
+              keyExtractor={item => item.id}
+              contentContainerStyle={{ paddingLeft: 20, paddingRight: 8, gap: 14 }}
+              renderItem={({ item }) => (
+                <MadeForYouCard styles={styles} c={c} playlist={item} onPress={openPlaylist} />
+              )}
+            />
+          </View>
+        )}
+
+        {/* Your Most Streamed Artists — 3 artist albums (≥4 real songs each) */}
+        {streamedArtists.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Your Most Streamed Artists</Text>
+            </View>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={streamedArtists}
+              keyExtractor={item => item}
+              contentContainerStyle={{ paddingLeft: 20, paddingRight: 8, gap: 14 }}
+              renderItem={({ item }) => (
+                <ArtistAlbumCard styles={styles} c={c} artistName={item} onOpen={openPlaylist} />
+              )}
+            />
+          </View>
+        )}
 
         <View style={{ height: 130 }} />
       </ScrollView>
