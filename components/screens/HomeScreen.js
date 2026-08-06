@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../context/UserContext';
-import { useArtwork, useArtistImage, useArtistTopSongs } from '../../services/artwork';
+import { useArtwork, useArtistImage, useArtistTopSongs, useDominantColor } from '../../services/artwork';
 
 const GENRES = ['All', 'Afrobeats', 'Hip Hop', 'Pop', 'R&B', 'Soul', 'Gospel', 'Amapiano'];
 
@@ -368,6 +368,51 @@ function ArtistAlbumCard({ styles, c, artistName, onOpen }) {
   return (
     <CollageAlbumCard styles={styles} c={c} name={artistName} subtitle={subtitle}
       songs={albumSongs} album={album} onOpen={onOpen} />
+  );
+}
+
+// Darken a hex/rgb colour toward black — used to tint the wide card's background
+// to the cover art, the way Spotify's mix/album cards do.
+function darkTint(hex, amt = 0.80) {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex || '');
+  if (!m) return '#232323';
+  const n = parseInt(m[1], 16);
+  const r = Math.round(((n >> 16) & 255) * (1 - amt));
+  const g = Math.round(((n >> 8) & 255) * (1 - amt));
+  const b = Math.round((n & 255) * (1 - amt));
+  return `rgb(${r},${g},${b})`;
+}
+
+// Wide, full-width album/mix card (Spotify-style): cover top-left, title + subtitle,
+// a "N songs • artist names" line, and a white Play button. The background is tinted
+// to the cover's dominant colour. Tapping the card opens the full song list.
+function WideAlbumCard({ styles, c, name, subtitle, meta, songs, album, onOpen, onPlay }) {
+  const cover = useArtwork(songs?.[0]);
+  const dom = useDominantColor(cover, GENRE_COLORS[songs?.[0]?.genre] || '#333');
+  return (
+    <TouchableOpacity
+      style={[styles.wideCard, { backgroundColor: darkTint(dom, 0.80) }]}
+      onPress={() => onOpen(album)}
+      activeOpacity={0.9}>
+      <View style={styles.wideTop}>
+        <View style={styles.wideArt}>
+          {cover
+            ? <Image source={{ uri: cover }} style={styles.wideArtImg} resizeMode="cover" />
+            : <Text style={styles.wideArtEmoji}>{songs?.[0]?.emoji || '🎵'}</Text>}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.wideTitle} numberOfLines={1}>{name}</Text>
+          {!!subtitle && <Text style={styles.wideSub} numberOfLines={1}>{subtitle}</Text>}
+        </View>
+      </View>
+      <Text style={styles.wideMeta} numberOfLines={2}>{meta}</Text>
+      <View style={styles.wideBottom}>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity style={styles.widePlay} onPress={() => onPlay(songs)} activeOpacity={0.85}>
+          <Ionicons name="play" size={20} color="#000" style={{ marginLeft: 2 }} />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -977,41 +1022,33 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.labelPillText}>TODAY</Text>
               </View>
             </View>
-            <FlatList
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              data={recommendedToday}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ paddingLeft: 20, paddingRight: 8 }}
-              renderItem={({ item, index }) => (
-                <SongCard styles={styles} c={c} item={item}
-                  onPress={() => openPlayer(item, recommendedToday, index)} />
-              )}
-            />
+            <WideAlbumCard styles={styles} c={c}
+              name="Recommended for you"
+              subtitle="Made for you today"
+              meta={`${recommendedToday.length} songs • ${[...new Set(recommendedToday.map(s => s.artist))].slice(0, 3).join(', ')}`}
+              songs={recommendedToday}
+              album={{ id: 'rec_today', name: 'Recommended for you', description: 'Made for you today', emoji: '✨', songs: recommendedToday }}
+              onOpen={openPlaylist}
+              onPlay={(songs) => openPlayer(songs[0], songs, 0)} />
           </View>
         )}
 
-        {/* Based on Your Top Mixes — up to 5 genre albums from the user's plays */}
+        {/* Based on Your Top Mixes — wide cards; tapping opens the mix's song list */}
         {topMixes.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Based on Your Top Mixes</Text>
             </View>
-            <FlatList
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              data={topMixes}
-              keyExtractor={item => item.id}
-              contentContainerStyle={{ paddingLeft: 20, paddingRight: 8, gap: 14 }}
-              renderItem={({ item }) => (
-                <CollageAlbumCard styles={styles} c={c}
-                  name={item.name}
-                  subtitle={[...new Set(item.songs.map(s => s.artist))].slice(0, 4).join(', ')}
-                  songs={item.songs}
-                  album={item}
-                  onOpen={openPlaylist} />
-              )}
-            />
+            {topMixes.map(item => (
+              <WideAlbumCard key={item.id} styles={styles} c={c}
+                name={item.name}
+                subtitle={item.description || 'Mix'}
+                meta={`${item.songs.length} songs • ${[...new Set(item.songs.map(s => s.artist))].slice(0, 3).join(', ')}`}
+                songs={item.songs}
+                album={item}
+                onOpen={openPlaylist}
+                onPlay={(songs) => openPlayer(songs[0], songs, 0)} />
+            ))}
           </View>
         )}
 
@@ -1371,6 +1408,17 @@ const makeStyles = (c) => StyleSheet.create({
   },
   mfyTitle: { color: c.text, fontSize: 13, fontWeight: '700' },
   mfyDesc: { color: c.textFaint, fontSize: 11, marginTop: 2 },
+  // Wide, full-width Spotify-style album/mix card
+  wideCard: { marginHorizontal: 20, marginBottom: 14, borderRadius: 14, padding: 16 },
+  wideTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  wideArt: { width: 76, height: 76, borderRadius: 8, overflow: 'hidden', backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center' },
+  wideArtImg: { width: '100%', height: '100%' },
+  wideArtEmoji: { fontSize: 34 },
+  wideTitle: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: -0.3 },
+  wideSub: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '600', marginTop: 3 },
+  wideMeta: { color: 'rgba(255,255,255,0.78)', fontSize: 13, fontWeight: '600', marginTop: 14, lineHeight: 19 },
+  wideBottom: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
+  widePlay: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
 
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
   sheet: {
