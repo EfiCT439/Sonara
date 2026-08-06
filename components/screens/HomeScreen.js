@@ -312,33 +312,62 @@ const getVibePeriod = () => {
   return 'night';
 };
 
-// An "album" card for a most-streamed artist. Self-fetches the artist's real
-// songs (Deezer) so every album has ≥4 real tracks + a real cover. Renders
-// nothing until the songs arrive.
+// One tile of a 2×2 cover collage — the real artwork for a single song.
+function CollageCell({ styles, song }) {
+  const art = useArtwork(song);
+  return (
+    <View style={styles.mfyGridCell}>
+      {art
+        ? <Image source={{ uri: art }} style={styles.collImg} resizeMode="cover" />
+        : <Text style={styles.mfyGridEmoji}>{song?.emoji || '🎵'}</Text>}
+    </View>
+  );
+}
+
+// A 2×2 collage of the first 4 songs' covers (pads by repeating if fewer than 4).
+function CollageCover({ styles, songs }) {
+  const four = [0, 1, 2, 3].map(i => songs[i] || songs[i % Math.max(songs.length, 1)]);
+  return (
+    <View style={styles.mfyGrid}>
+      {four.map((s, i) => <CollageCell key={i} styles={styles} song={s} />)}
+    </View>
+  );
+}
+
+// An album/mix card whose cover is a 4-image collage, with a names subtitle.
+function CollageAlbumCard({ styles, c, name, subtitle, songs, album, onOpen }) {
+  return (
+    <TouchableOpacity style={styles.mfyCard} onPress={() => onOpen(album)} activeOpacity={0.75}>
+      <View style={styles.mfyArt}>
+        <CollageCover styles={styles} songs={songs} />
+        <View style={styles.mfyPlayBtn}>
+          <Ionicons name="play" size={13} color={c.icon} />
+        </View>
+      </View>
+      <Text style={styles.mfyTitle} numberOfLines={1}>{name}</Text>
+      <Text style={styles.mfyDesc} numberOfLines={1}>{subtitle}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// A most-streamed-artist album. Self-fetches the artist's real songs (Deezer) so
+// every album has ≥4 real tracks; the box is a collage of 4 covers and the
+// subtitle lists that artist's top song titles.
 function ArtistAlbumCard({ styles, c, artistName, onOpen }) {
   const { songs } = useArtistTopSongs(artistName);
-  const cover = useArtwork(songs[0]);
   if (songs.length < 4) return null;
+  const albumSongs = songs.slice(0, 12).map((s, i) => ({ ...s, id: `art_${artistName}_${s.id || i}` }));
   const album = {
     id: `artalbum_${artistName}`,
     name: `${artistName} — Essentials`,
     description: `Top songs by ${artistName}`,
     emoji: '🎤',
-    songs: songs.slice(0, 12).map((s, i) => ({ ...s, id: `art_${artistName}_${s.id || i}` })),
+    songs: albumSongs,
   };
+  const subtitle = songs.slice(0, 4).map(s => s.title).join(', ');
   return (
-    <TouchableOpacity style={styles.mfyCard} onPress={() => onOpen(album)} activeOpacity={0.75}>
-      <View style={styles.mfyArt}>
-        {cover
-          ? <Image source={{ uri: cover }} style={styles.mfyCoverImg} />
-          : <Text style={styles.mfySingleEmoji}>🎤</Text>}
-        <View style={styles.mfyPlayBtn}>
-          <Ionicons name="play" size={13} color={c.icon} />
-        </View>
-      </View>
-      <Text style={styles.mfyTitle} numberOfLines={1}>{artistName}</Text>
-      <Text style={styles.mfyDesc} numberOfLines={1}>{album.songs.length} songs · Essentials</Text>
-    </TouchableOpacity>
+    <CollageAlbumCard styles={styles} c={c} name={artistName} subtitle={subtitle}
+      songs={albumSongs} album={album} onOpen={onOpen} />
   );
 }
 
@@ -569,27 +598,29 @@ export default function HomeScreen({ navigation }) {
     [favouriteArtists]
   );
 
-  // ── Vibes — top 5 songs for the current part of the day, auto-changing by hour.
-  // Leads with the user's top genre when it fits the period; the section restamps
-  // each time Home renders, so morning/afternoon/night swap automatically.
+  // ── Vibes — top 5 songs for the current part of the day. Spans EVERY genre
+  // (one pick per genre) and rotates by a daily seed, so each morning/afternoon/
+  // night surfaces a fresh, cross-genre set that changes every day.
   const vibePeriod = getVibePeriod();
+  const daySeed = Math.floor(Date.now() / 86400000); // day number — changes each calendar day
   const vibes = useMemo(() => {
     const def = VIBE_PERIODS[vibePeriod];
-    const ordered = [
-      ...(topGenre && def.genres.includes(topGenre) ? [topGenre] : []),
-      ...def.genres,
-    ];
+    const genreKeys = Object.keys(ALL_SONGS).filter(k => k !== 'All' && (ALL_SONGS[k] || []).length);
+    if (!genreKeys.length) return { title: def.title, songs: [] };
+    const periodOffset = { morning: 0, afternoon: 1, night: 2 }[vibePeriod] || 0;
+    const seed = daySeed + periodOffset;
+    const rot = seed % genreKeys.length;
+    const rotated = [...genreKeys.slice(rot), ...genreKeys.slice(0, rot)]; // different genre order each day
     const seen = new Set();
     const out = [];
-    for (const g of ordered) {
-      for (const s of (ALL_SONGS[g] || [])) {
-        if (!seen.has(s.title) && out.length < 5) { seen.add(s.title); out.push({ ...s, id: `vibe_${s.id}` }); }
-      }
+    for (const g of rotated) {
+      const pool = ALL_SONGS[g];
+      const s = pool[seed % pool.length]; // rotating pick within the genre
+      if (s && !seen.has(s.title) && out.length < 5) { seen.add(s.title); out.push({ ...s, id: `vibe_${g}_${s.id}` }); }
       if (out.length >= 5) break;
     }
-    return { ...def, songs: out };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vibePeriod, topGenre]);
+    return { title: def.title, songs: out };
+  }, [vibePeriod, daySeed]);
 
   // ── Recommended for you · Today — top 8 songs from the user's taste (top genres
   // interleaved), refreshed daily. Falls back to onboarding genres / daily picks.
@@ -918,7 +949,7 @@ export default function HomeScreen({ navigation }) {
         {vibes.songs.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{vibes.emoji}  {vibes.title}</Text>
+              <Text style={styles.sectionTitle}>{vibes.title}</Text>
               <View style={styles.labelPill}>
                 <Text style={styles.labelPillText}>NOW</Text>
               </View>
@@ -973,7 +1004,12 @@ export default function HomeScreen({ navigation }) {
               keyExtractor={item => item.id}
               contentContainerStyle={{ paddingLeft: 20, paddingRight: 8, gap: 14 }}
               renderItem={({ item }) => (
-                <MadeForYouCard styles={styles} c={c} playlist={item} onPress={openPlaylist} />
+                <CollageAlbumCard styles={styles} c={c}
+                  name={item.name}
+                  subtitle={[...new Set(item.songs.map(s => s.artist))].slice(0, 4).join(', ')}
+                  songs={item.songs}
+                  album={item}
+                  onOpen={openPlaylist} />
               )}
             />
           </View>
@@ -1320,6 +1356,7 @@ const makeStyles = (c) => StyleSheet.create({
     justifyContent: 'center',
   },
   mfyGridEmoji: { fontSize: 28 },
+  collImg: { width: '100%', height: '100%' },
   mfySingleEmoji: { fontSize: 62 },
   mfyPlayBtn: {
     position: 'absolute',
